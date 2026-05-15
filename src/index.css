@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-gk-black: #0e0e0e;
+  --color-gk-yellow: #ffb800;
+  --color-gk-surface: #141414;
+  --color-gk-surface-2: #1a1a1a;
+  --color-gk-border: #2a2a2a;
+  --color-gk-muted: #888888;
+  --font-grotesk: 'Space Grotesk', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+html {
+  scroll-behavior: auto;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-grotesk);
+  background-color: #0e0e0e;
+  color: #f5f5f5;
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+}
+
+[id] {
+  scroll-margin-top: 5.5rem;
+}
+
+::selection {
+  background: #ffb800;
+  color: #0e0e0e;
+}
+
+.gk-grid-floor {
+  background-image:
+    linear-gradient(rgba(255, 184, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 184, 0, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 75%);
+}
+
+.gk-race-scene {
+  perspective: 900px;
+  perspective-origin: 50% 20%;
+}
+
+.gk-race-track {
+  transform: rotateX(12deg) scale(1.08);
+  transform-origin: 50% 0%;
+  transform-style: preserve-3d;
+}
+
+.gk-macro-shadow {
+  box-shadow:
+    0 32px 64px -24px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.gk-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: #ffb800;
+  color: #0e0e0e;
+  font-weight: 700;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.gk-btn-primary:hover {
+  background: #ffc933;
+  box-shadow: 0 0 32px rgba(255, 184, 0, 0.35);
+  transform: translateY(-1px);
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

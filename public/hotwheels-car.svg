@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" fill="none">
+  <ellipse cx="160" cy="108" rx="120" ry="10" fill="#000" opacity="0.45"/>
+  <g filter="url(#sh)">
+    <path d="M40 72 L58 48 L110 38 L228 36 L272 46 L290 62 L296 72 L40 72Z" fill="#E10600"/>
+    <path d="M40 72 L296 72 L288 78 L48 78 Z" fill="#1a1a1a"/>
+    <path d="M62 46 L108 40 L210 38 L252 44 L238 56 L88 58 L62 46Z" fill="#f0f0f0"/>
+    <path d="M72 48 L200 42 L195 50 L78 52 Z" fill="#2a2a2a" opacity="0.5"/>
+    <path d="M118 52 L188 50 L184 58 L122 60 Z" fill="#FFB800"/>
+    <text x="155" y="58" textAnchor="middle" fill="#0E0E0E" font-size="11" font-weight="bold" font-family="Arial,sans-serif">GK</text>
+    <circle cx="88" cy="76" r="18" fill="#111" stroke="#333" stroke-width="2"/>
+    <circle cx="88" cy="76" r="10" fill="#222"/>
+    <circle cx="88" cy="76" r="4" fill="#FFB800"/>
+    <circle cx="248" cy="76" r="18" fill="#111" stroke="#333" stroke-width="2"/>
+    <circle cx="248" cy="76" r="10" fill="#222"/>
+    <circle cx="248" cy="76" r="4" fill="#FFB800"/>
+    <rect x="278" y="54" width="12" height="5" rx="1" fill="#FFB800"/>
+  </g>
+  <defs>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+</svg>
