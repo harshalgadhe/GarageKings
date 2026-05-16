@@ -6,10 +6,12 @@ import { vaultProducts } from '../../data/content'
 
 gsap.registerPlugin(ScrollTrigger)
 
-const VaultShowcase = forwardRef(function VaultShowcase(_props, ref) {
+const VaultShowcase = forwardRef(function VaultShowcase({ carouselCars = [] }, ref) {
   const containerRef = useRef(null)
   const scrollWrapperRef = useRef(null)
   const carouselRef = useRef(null)
+
+  const activeCars = carouselCars && carouselCars.length > 0 ? carouselCars : vaultProducts
 
   useEffect(() => {
     const container = containerRef.current
@@ -34,7 +36,7 @@ const VaultShowcase = forwardRef(function VaultShowcase(_props, ref) {
     })
 
     return () => ctx.revert()
-  }, [])
+  }, [activeCars.length])
 
   return (
     <section 
@@ -75,9 +77,9 @@ const VaultShowcase = forwardRef(function VaultShowcase(_props, ref) {
           ref={carouselRef} 
           className="flex gap-8 px-8 md:px-16 w-max pb-12"
         >
-          {vaultProducts.map((product) => (
+          {activeCars.map((product) => (
             <div 
-              key={product.id} 
+              key={product.id || product.name} 
               className="relative w-[80vw] md:w-[400px] h-[50vh] min-h-[400px] shrink-0 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden group transition-all duration-500 hover:border-gk-yellow/40"
             >
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent z-10" />

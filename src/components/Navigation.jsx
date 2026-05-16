@@ -58,7 +58,7 @@ export default function Navigation({ activeSection }) {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:block">
-            <ul className="flex gap-6">
+            <ul className="flex gap-6 items-center">
               {links.map((link) => (
                 <li key={link.id}>
                   <button
@@ -70,6 +70,14 @@ export default function Navigation({ activeSection }) {
                   </button>
                 </li>
               ))}
+              <li className="pl-4 border-l border-white/20">
+                <a
+                  href="/marketplace"
+                  className="whitespace-nowrap py-2 px-4 rounded-full bg-gk-orange text-white text-sm font-bold tracking-wide transition-colors duration-300 hover:bg-white hover:text-black shadow-[0_0_15px_rgba(255,51,0,0.4)]"
+                >
+                  Marketplace
+                </a>
+              </li>
             </ul>
           </nav>
 
@@ -122,6 +130,17 @@ export default function Navigation({ activeSection }) {
                   )}
                 </motion.button>
               ))}
+              
+              <motion.a
+                href="/marketplace"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.4, delay: links.length * 0.05 + 0.1, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-4 px-12 py-4 rounded-full bg-gk-orange text-white text-xl font-black uppercase tracking-wider hover:bg-white hover:text-black transition-colors"
+              >
+                Marketplace
+              </motion.a>
             </nav>
             
             {/* Ambient glows inside menu */}

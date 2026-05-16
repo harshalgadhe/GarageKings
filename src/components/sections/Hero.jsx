@@ -7,26 +7,34 @@ import { scrollToSection, useLenis } from '../../providers/SmoothScroll'
 
 gsap.registerPlugin(ScrollTrigger)
 
-const HERO_IMAGES = [
+const DEFAULT_HERO_IMAGES = [
   '/hotwheels-car.png',
   '/vault-3.png',
   '/vault-4.png',
   '/vault-5.png',
 ]
 
-const Hero = forwardRef(function Hero(_props, ref) {
+const Hero = forwardRef(function Hero({ heroImages = [] }, ref) {
   const lenisRef = useLenis()
   const carRef = useRef(null)
   const containerRef = useRef(null)
   const [currentImgIndex, setCurrentImgIndex] = useState(0)
 
+  // Always use a static image for the first slide so the page loads instantly.
+  // The database images will begin showing from the second slide onwards.
+  const staticFirstImage = '/hotwheels-car.png'
+  
+  const activeImages = heroImages && heroImages.length > 0 
+    ? [staticFirstImage, ...heroImages] 
+    : DEFAULT_HERO_IMAGES
+
   // Carousel auto-scroll
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentImgIndex((prev) => (prev + 1) % HERO_IMAGES.length)
+      setCurrentImgIndex((prev) => (prev + 1) % activeImages.length)
     }, 4500)
     return () => clearInterval(timer)
-  }, [])
+  }, [activeImages.length])
 
   useEffect(() => {
     const el = carRef.current
@@ -70,7 +78,7 @@ const Hero = forwardRef(function Hero(_props, ref) {
         <AnimatePresence>
           <motion.img
             key={currentImgIndex}
-            src={HERO_IMAGES[currentImgIndex]}
+            src={activeImages[currentImgIndex]}
             alt="Garage Kings Vault"
             className="absolute inset-0 w-full h-full object-cover object-[center_75%] md:object-center"
             initial={{ opacity: 0, scale: 1.05 }}
