@@ -28,6 +28,14 @@ const Hero = forwardRef(function Hero({ heroImages = [] }, ref) {
     ? [staticFirstImage, ...heroImages] 
     : DEFAULT_HERO_IMAGES
 
+  // Preload all hero images in the background so there's no delay/flicker when the slider changes
+  useEffect(() => {
+    activeImages.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [activeImages])
+
   // Carousel auto-scroll
   useEffect(() => {
     const timer = setInterval(() => {

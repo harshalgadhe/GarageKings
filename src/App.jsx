@@ -26,7 +26,15 @@ export default function App() {
   }, [])
 
   if (isLoading) {
-    return <div className="min-h-[100svh] bg-gk-black flex items-center justify-center text-white/50">Initializing routing...</div>
+    return (
+      <div className="min-h-[100svh] bg-gk-black flex flex-col items-center justify-center gap-6">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full blur-xl bg-gk-yellow/20 animate-pulse"></div>
+          <div className="w-12 h-12 rounded-full border-4 border-white/5 border-t-gk-yellow animate-spin relative z-10"></div>
+        </div>
+        <div className="text-gk-yellow text-xs font-bold tracking-[0.3em] uppercase animate-pulse">Garage Kings</div>
+      </div>
+    )
   }
 
   return (

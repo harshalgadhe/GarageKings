@@ -15,8 +15,19 @@ export default function Admin() {
 
   const [cars, setCars] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [globalSettings, setGlobalSettings] = useState({ showPrices: false, adminPath: '9f7a4b2c-8d1e-45a9-b3f6-c1d2e8a7b9f0' })
+  const [globalSettings, setGlobalSettings] = useState({ 
+    showPrices: false, 
+    adminPath: '9f7a4b2c-8d1e-45a9-b3f6-c1d2e8a7b9f0',
+    dropDate: '',
+    dropTime: '20:00',
+    dropLabel: 'Friday · 8:00 PM IST',
+    dropDesc: 'Every Friday at 8 PM IST, we release a fresh batch of 1:64 heat. The rarest pieces usually go in minutes.'
+  })
   const [tempAdminPath, setTempAdminPath] = useState('')
+  const [tempDropDate, setTempDropDate] = useState('')
+  const [tempDropTime, setTempDropTime] = useState('20:00')
+  const [tempDropLabel, setTempDropLabel] = useState('')
+  const [tempDropDesc, setTempDropDesc] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   
   // Form state
@@ -56,6 +67,13 @@ export default function Admin() {
       setCars(carData)
       setGlobalSettings(settingsData)
       setTempAdminPath(settingsData?.adminPath || '9f7a4b2c-8d1e-45a9-b3f6-c1d2e8a7b9f0')
+      
+      // Default to today if no date is set
+      const todayStr = new Date().toISOString().split('T')[0]
+      setTempDropDate(settingsData?.dropDate || todayStr)
+      setTempDropTime(settingsData?.dropTime || '20:00')
+      setTempDropLabel(settingsData?.dropLabel || 'Friday · 8:00 PM IST')
+      setTempDropDesc(settingsData?.dropDesc || 'Every Friday at 8 PM IST, we release a fresh batch of 1:64 heat. The rarest pieces usually go in minutes.')
     } catch (err) {
       alert(err.message)
     } finally {
@@ -87,6 +105,22 @@ export default function Admin() {
       setIsSettingsOpen(false)
     } catch (e) {
       alert("Failed to update admin path: " + e.message)
+    }
+  }
+
+  const saveDropSettings = async () => {
+    try {
+      const dropSettings = {
+        dropDate: tempDropDate,
+        dropTime: tempDropTime,
+        dropLabel: tempDropLabel.trim(),
+        dropDesc: tempDropDesc.trim()
+      }
+      await updateGlobalSettings(dropSettings)
+      setGlobalSettings({ ...globalSettings, ...dropSettings })
+      alert("Drop schedule updated successfully!")
+    } catch (e) {
+      alert("Failed to update drop settings: " + e.message)
     }
   }
 
@@ -193,7 +227,15 @@ export default function Admin() {
   }
 
   if (isAuthLoading) {
-    return <div className="min-h-[100svh] bg-gk-black flex items-center justify-center text-white/50">Checking security...</div>
+    return (
+      <div className="min-h-[100svh] bg-gk-black flex flex-col items-center justify-center gap-6">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full blur-xl bg-red-500/20 animate-pulse"></div>
+          <div className="w-12 h-12 rounded-full border-4 border-white/5 border-t-red-500 animate-spin relative z-10"></div>
+        </div>
+        <div className="text-red-500 text-xs font-bold tracking-[0.3em] uppercase animate-pulse">Secure Auth</div>
+      </div>
+    )
   }
 
   if (!isAuthenticated) {
@@ -303,7 +345,7 @@ export default function Admin() {
                       Change the secret path required to access this admin panel. Do not include slashes. 
                       Your current login URL is: <code className="bg-black/50 px-2 py-1 rounded text-gk-yellow break-all">yourdomain.com/{globalSettings.adminPath}/admin</code>
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="flex flex-col sm:flex-row gap-4 mb-8 pb-8 border-b border-white/10">
                       <input 
                         type="text" 
                         value={tempAdminPath}
@@ -317,6 +359,67 @@ export default function Admin() {
                         Update URL
                       </button>
                     </div>
+
+                    <h3 className="text-lg font-bold text-white mb-2">Drop Schedule</h3>
+                    <p className="text-sm text-white/60 mb-4 max-w-2xl">
+                      Configure the countdown timer on the homepage.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Drop Date</label>
+                        <input 
+                          type="date" 
+                          value={tempDropDate} 
+                          onChange={(e) => setTempDropDate(e.target.value)}
+                          onClick={(e) => {
+                            try { e.target.showPicker() } catch(err) { /* ignore */ }
+                          }}
+                          className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-gk-yellow cursor-pointer appearance-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Time (24HR format)</label>
+                        <input 
+                          type="time" 
+                          value={tempDropTime}
+                          onChange={(e) => setTempDropTime(e.target.value)}
+                          onClick={(e) => {
+                            try { e.target.showPicker() } catch(err) { /* ignore */ }
+                          }}
+                          className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-gk-yellow cursor-pointer appearance-none"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Short Label</label>
+                      <input 
+                        type="text" 
+                        value={tempDropLabel}
+                        onChange={(e) => setTempDropLabel(e.target.value)}
+                        placeholder="e.g. Friday · 8:00 PM IST"
+                        className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-gk-yellow"
+                      />
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Description</label>
+                      <textarea 
+                        value={tempDropDesc}
+                        onChange={(e) => setTempDropDesc(e.target.value)}
+                        rows={2}
+                        placeholder="Every Friday at 8 PM IST..."
+                        className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-gk-yellow"
+                      />
+                    </div>
+                    
+                    <button 
+                      onClick={saveDropSettings}
+                      className="px-6 py-2.5 rounded-lg bg-gk-yellow hover:bg-yellow-400 text-black font-bold transition-colors"
+                    >
+                      Save Drop Schedule
+                    </button>
                   </div>
                 </div>
               </div>

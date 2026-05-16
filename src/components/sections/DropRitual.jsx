@@ -2,29 +2,16 @@ import { forwardRef, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { footerCopy } from '../../data/content'
 
-function getNextFriday8PMIST() {
+function getNextDropTime(targetDateStr, targetTimeStr) {
+  if (!targetDateStr) return 0
   const now = new Date()
-  for (let addDays = 0; addDays <= 7; addDays++) {
-    const probe = new Date(now.getTime() + addDays * 86_400_000)
-    const parts = new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      weekday: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(probe)
-    const get = (t) => parts.find((p) => p.type === t)?.value
-    const weekdays = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-    if (weekdays[get('weekday')] !== 5) continue
-    const target = new Date(
-      `${get('year')}-${String(get('month')).padStart(2, '0')}-${String(get('day')).padStart(2, '0')}T20:00:00+05:30`,
-    )
-    if (target.getTime() > now.getTime()) return target.getTime() - now.getTime()
+  const timeStr = `${targetTimeStr}:00`
+  const target = new Date(`${targetDateStr}T${timeStr}+05:30`)
+  
+  if (target.getTime() > now.getTime()) {
+    return target.getTime() - now.getTime()
   }
-  return 7 * 86_400_000
+  return 0
 }
 
 function formatCountdown(ms) {
@@ -50,13 +37,18 @@ function TimeBlock({ value, label }) {
   )
 }
 
-const DropRitual = forwardRef(function DropRitual(_props, ref) {
-  const [remaining, setRemaining] = useState(() => getNextFriday8PMIST())
+const DropRitual = forwardRef(function DropRitual({ dropSettings }, ref) {
+  const dateStr = dropSettings?.dropDate || new Date().toISOString().split('T')[0]
+  const timeStr = dropSettings?.dropTime || '20:00'
+  const label = dropSettings?.dropLabel || 'Friday · 8:00 PM IST'
+  const desc = dropSettings?.dropDesc || 'Every Friday at 8 PM IST, we release a fresh batch of 1:64 heat. The rarest pieces usually go in minutes.'
+
+  const [remaining, setRemaining] = useState(() => getNextDropTime(dateStr, timeStr))
 
   useEffect(() => {
-    const id = setInterval(() => setRemaining(getNextFriday8PMIST()), 1000)
+    const id = setInterval(() => setRemaining(getNextDropTime(dateStr, timeStr)), 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [dateStr, timeStr])
 
   const { days, hours, minutes, seconds } = formatCountdown(remaining)
 
@@ -79,7 +71,7 @@ const DropRitual = forwardRef(function DropRitual(_props, ref) {
           viewport={{ once: true }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         >
-          Don&apos;t Miss the Friday Drop
+          Don&apos;t Miss the Drop
         </motion.h2>
 
         <motion.p
@@ -88,8 +80,7 @@ const DropRitual = forwardRef(function DropRitual(_props, ref) {
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
         >
-          Every Friday at 8 PM IST, we release a fresh batch of 1:64 heat. The rarest pieces
-          usually go in minutes.
+          {desc}
         </motion.p>
 
         <motion.div
@@ -105,7 +96,7 @@ const DropRitual = forwardRef(function DropRitual(_props, ref) {
         </motion.div>
 
         <motion.p className="mt-8 text-sm font-semibold text-gk-yellow">
-          Friday · 8:00 PM IST
+          {label}
         </motion.p>
 
         <motion.a
