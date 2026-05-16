@@ -4,6 +4,7 @@ import { SmoothScrollProvider } from './providers/SmoothScroll'
 import Home from './pages/Home'
 import Admin from './pages/Admin'
 import Marketplace from './pages/Marketplace'
+import Auctions from './pages/Auctions'
 import { getGlobalSettings } from './lib/db'
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path={`/${adminPath}/admin`} element={<Admin />} />
           <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/auctions" element={<Auctions />} />
         </Routes>
       </SmoothScrollProvider>
     </Router>

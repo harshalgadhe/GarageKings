@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut } from 'lucide-react'
-import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, auth } from '../lib/db'
+import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 
@@ -34,6 +34,17 @@ export default function Admin() {
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({ name: '', lane: '', grade: '', price: '', currency: '₹', image: '', brand: '', scale: '1:64', description: '', carBrand: '', year: '', isHero: false, isCarousel: false })
+  const [bidsModal, setBidsModal] = useState(null)
+  const [bidsLoading, setBidsLoading] = useState(false)
+
+  // Auction state
+  const [adminTab, setAdminTab] = useState('inventory')
+  const [auctions, setAuctions] = useState([])
+  const [isAddingAuction, setIsAddingAuction] = useState(false)
+  const [editingAuctionId, setEditingAuctionId] = useState(null)
+  const [auctionForm, setAuctionForm] = useState({ title: '', brand: '', carBrand: '', scale: '1:64', grade: '', description: '', image: '', currency: '₹', startingPrice: '', minBidIncrement: '', endDate: '', endTime: '20:00' })
+  const [auctionBidsModal, setAuctionBidsModal] = useState(null)
+  const [auctionBidsLoading, setAuctionBidsLoading] = useState(false)
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -63,12 +74,11 @@ export default function Admin() {
 
   const loadData = async () => {
     try {
-      const [carData, settingsData] = await Promise.all([getCars(), getGlobalSettings()])
+      const [carData, settingsData, auctionData] = await Promise.all([getCars(), getGlobalSettings(), getAuctions()])
       setCars(carData)
+      setAuctions(auctionData)
       setGlobalSettings(settingsData)
       setTempAdminPath(settingsData?.adminPath || '9f7a4b2c-8d1e-45a9-b3f6-c1d2e8a7b9f0')
-      
-      // Default to today if no date is set
       const todayStr = new Date().toISOString().split('T')[0]
       setTempDropDate(settingsData?.dropDate || todayStr)
       setTempDropTime(settingsData?.dropTime || '20:00')
@@ -197,7 +207,7 @@ export default function Admin() {
   }
 
   const handleEdit = (car) => {
-    setFormData({ brand: '', scale: '1:64', description: '', carBrand: '', year: '', currency: '₹', isHero: false, isCarousel: false, ...car })
+    setFormData({ brand: '', scale: '1:64', description: '', carBrand: '', year: '', currency: '₹', isHero: false, isCarousel: false, isAuction: false, ...car })
     setEditingId(car.id)
     setIsAdding(true)
   }
@@ -224,6 +234,52 @@ export default function Admin() {
     }
     setCars(newCars)
     await updateCarOrder(newCars)
+  }
+
+  const handleAuctionImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const url = await uploadImageToStorage(file)
+      if (url) setAuctionForm(f => ({ ...f, image: url }))
+    } catch (err) { alert('Image upload failed: ' + err.message) }
+  }
+
+  const saveAuction = async () => {
+    const { title, startingPrice, minBidIncrement, endDate, endTime } = auctionForm
+    if (!title || !startingPrice || !minBidIncrement || !endDate || !endTime) {
+      return alert('Please fill in Title, Starting Price, Min Increment, End Date and End Time.')
+    }
+    try {
+      const data = { ...auctionForm, startingPrice: Number(startingPrice), minBidIncrement: Number(minBidIncrement) }
+      if (editingAuctionId) {
+        await updateAuction(editingAuctionId, data)
+      } else {
+        await addAuction(data)
+      }
+      setIsAddingAuction(false)
+      setEditingAuctionId(null)
+      setAuctionForm({ title: '', brand: '', carBrand: '', scale: '1:64', grade: '', description: '', image: '', currency: '₹', startingPrice: '', minBidIncrement: '', endDate: '', endTime: '20:00' })
+      const refreshed = await getAuctions()
+      setAuctions(refreshed)
+    } catch (e) { alert('Failed to save: ' + e.message) }
+  }
+
+  const handleDeleteAuction = async (id) => {
+    if (confirm('Delete this auction?')) {
+      await deleteAuction(id)
+      setAuctions(prev => prev.filter(a => a.id !== id))
+    }
+  }
+
+  const viewAuctionBids = async (auction) => {
+    setAuctionBidsLoading(true)
+    setAuctionBidsModal({ auction, bids: [] })
+    try {
+      const bids = await getAuctionBids(auction.id)
+      setAuctionBidsModal({ auction, bids })
+    } catch (e) { alert('Failed to load bids') }
+    finally { setAuctionBidsLoading(false) }
   }
 
   if (isAuthLoading) {
@@ -315,9 +371,19 @@ export default function Admin() {
                 setEditingId(null)
                 setIsAdding(true)
               }}
-              className="px-6 py-2.5 rounded-full bg-gk-yellow text-black text-sm font-bold flex items-center gap-2 hover:bg-yellow-400 transition-colors"
+              className={`px-6 py-2.5 rounded-full bg-gk-yellow text-black text-sm font-bold flex items-center gap-2 hover:bg-yellow-400 transition-colors ${adminTab !== 'inventory' ? 'hidden' : ''}`}
             >
               <Plus size={16} /> Add Item
+            </button>
+            <button 
+              onClick={() => {
+                setAuctionForm({ title: '', brand: '', carBrand: '', scale: '1:64', grade: '', description: '', image: '', currency: '₹', startingPrice: '', minBidIncrement: '', endDate: '', endTime: '20:00' })
+                setEditingAuctionId(null)
+                setIsAddingAuction(true)
+              }}
+              className={`px-6 py-2.5 rounded-full bg-purple-500 text-white text-sm font-bold flex items-center gap-2 hover:bg-purple-400 transition-colors ${adminTab !== 'auctions' ? 'hidden' : ''}`}
+            >
+              <Plus size={16} /> New Auction
             </button>
             <button 
               onClick={handleLogout}
@@ -328,6 +394,19 @@ export default function Admin() {
           </div>
         </header>
 
+        {/* Tab Switcher */}
+        <div className="flex gap-2 mb-8 border-b border-white/8 pb-0">
+          {['inventory', 'auctions'].map(t => (
+            <button key={t} onClick={() => setAdminTab(t)}
+              className={`px-5 py-3 text-sm font-black uppercase tracking-wider rounded-t-xl transition-colors ${
+                adminTab === t ? 'bg-white/8 border border-white/10 border-b-0 text-white' : 'text-white/30 hover:text-white/60'
+              }`}>
+              {t === 'inventory' ? 'Inventory' : '🏷️ Auctions'}
+            </button>
+          ))}
+        </div>
+        {adminTab === 'inventory' && (
+          <>
         <AnimatePresence>
           {isSettingsOpen && (
             <motion.div 
@@ -505,6 +584,13 @@ export default function Admin() {
                       <input type="checkbox" className="hidden" checked={formData.isCarousel} onChange={(e) => setFormData({...formData, isCarousel: e.target.checked})} />
                       <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">Feature in Carousel (Max 8)</span>
                     </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.isAuction ? 'bg-purple-500 border-purple-500 text-white' : 'border-white/20 bg-black group-hover:border-white/40'}`}>
+                        {formData.isAuction && <svg viewBox="0 0 14 14" fill="none" className="w-3 h-3"><path d="M3 7.5L5.5 10L11 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <input type="checkbox" className="hidden" checked={formData.isAuction} onChange={(e) => setFormData({...formData, isAuction: e.target.checked})} />
+                      <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">Open for Bidding</span>
+                    </label>
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Image Upload</label>
@@ -558,7 +644,23 @@ export default function Admin() {
                     <div className="text-xs text-white/50 mt-1">{car.lane} • {car.grade}</div>
                   </div>
                   <div className="col-span-2 font-mono text-sm text-gk-yellow">{car.currency || '₹'}{car.price}</div>
-                  <div className="col-span-3 flex justify-end gap-3">
+                  <div className="col-span-3 flex justify-end gap-2 flex-wrap">
+                    {car.isAuction && (
+                      <button
+                        onClick={async () => {
+                          setBidsLoading(true)
+                          setBidsModal({ car, bids: [] })
+                          try {
+                            const bids = await getBids(car.id)
+                            setBidsModal({ car, bids })
+                          } catch(e) { alert('Failed to load bids') }
+                          finally { setBidsLoading(false) }
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold text-purple-300 bg-purple-500/10 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-colors whitespace-nowrap"
+                      >
+                        View Bids
+                      </button>
+                    )}
                     <button onClick={() => handleEdit(car)} className="p-2 text-white/50 hover:text-white bg-white/5 rounded-lg hover:bg-white/10 transition-colors"><Edit2 size={16} /></button>
                     <button onClick={() => handleDelete(car.id)} className="p-2 text-white/50 hover:text-gk-orange bg-white/5 rounded-lg hover:bg-red-500/10 transition-colors"><Trash2 size={16} /></button>
                   </div>
@@ -567,7 +669,232 @@ export default function Admin() {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
+
+      {/* Bids Modal */}
+      <AnimatePresence>
+        {bidsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setBidsModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-gk-black border border-purple-500/30 rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto shadow-[0_0_60px_rgba(168,85,247,0.2)]"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white">Bids</h3>
+                  <p className="text-xs text-white/50 mt-1 truncate">{bidsModal.car.name}</p>
+                </div>
+                <button onClick={() => setBidsModal(null)} className="text-white/50 hover:text-white"><X size={20} /></button>
+              </div>
+              {bidsLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="w-8 h-8 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin" />
+                </div>
+              ) : bidsModal.bids.length === 0 ? (
+                <div className="text-center py-12 text-white/40">
+                  <p className="text-4xl mb-4">🏷️</p>
+                  <p>No bids yet on this item.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {bidsModal.bids.map((bid, i) => (
+                    <div key={bid.id} className={`flex items-center gap-4 p-4 rounded-xl border ${
+                      i === 0 ? 'bg-purple-500/15 border-purple-500/40' : 'bg-white/5 border-white/10'
+                    }`}>
+                      <div className={`text-lg font-black w-8 text-center ${ i === 0 ? 'text-purple-400' : 'text-white/30'}`}>
+                        #{i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white">{bid.bidderName}</div>
+                        <div className="text-xs text-white/50 truncate">{bid.contact}</div>
+                        <div className="text-[10px] text-white/30 mt-0.5">{new Date(bid.timestamp).toLocaleString('en-IN')}</div>
+                      </div>
+                      <div className="font-mono font-black text-lg text-purple-300 shrink-0">
+                        {bidsModal.car.currency || '₹'}{bid.amount.toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── AUCTION TAB PANEL ───────────────────────────── */}
+      {adminTab === 'auctions' && (
+        <div className="mt-2">
+          {/* Auction Form */}
+          <AnimatePresence>
+            {isAddingAuction && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-8 overflow-hidden">
+                <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-6 md:p-8">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-white">{editingAuctionId ? 'Edit Auction' : 'New Auction'}</h2>
+                    <button onClick={() => setIsAddingAuction(false)} className="text-white/50 hover:text-white"><X size={20} /></button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Title *</label>
+                      <input type="text" value={auctionForm.title} onChange={e => setAuctionForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Ferrari F40 MiniGT Black" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Die-cast Maker</label>
+                      <input type="text" value={auctionForm.brand} onChange={e => setAuctionForm(f => ({ ...f, brand: e.target.value }))} placeholder="e.g. MiniGT" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Car Brand</label>
+                      <input type="text" value={auctionForm.carBrand} onChange={e => setAuctionForm(f => ({ ...f, carBrand: e.target.value }))} placeholder="e.g. Ferrari" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Scale</label>
+                      <input type="text" value={auctionForm.scale} onChange={e => setAuctionForm(f => ({ ...f, scale: e.target.value }))} placeholder="e.g. 1:64" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Grade</label>
+                      <input type="text" value={auctionForm.grade} onChange={e => setAuctionForm(f => ({ ...f, grade: e.target.value }))} placeholder="e.g. MIB" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    {/* Pricing */}
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Currency</label>
+                      <select value={auctionForm.currency} onChange={e => setAuctionForm(f => ({ ...f, currency: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 appearance-none">
+                        <option value="₹">₹ INR</option><option value="$">$ USD</option><option value="€">€ EUR</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Starting Price *</label>
+                      <input type="number" value={auctionForm.startingPrice} onChange={e => setAuctionForm(f => ({ ...f, startingPrice: e.target.value }))} placeholder="e.g. 2000" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Min Bid Increment *</label>
+                      <input type="number" value={auctionForm.minBidIncrement} onChange={e => setAuctionForm(f => ({ ...f, minBidIncrement: e.target.value }))} placeholder="e.g. 100" className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    {/* End Date/Time */}
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Auction End Date *</label>
+                      <input type="date" value={auctionForm.endDate} onChange={e => setAuctionForm(f => ({ ...f, endDate: e.target.value }))} onClick={e => { try { e.target.showPicker() } catch(err) {} }} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Auction End Time (IST) *</label>
+                      <input type="time" value={auctionForm.endTime} onChange={e => setAuctionForm(f => ({ ...f, endTime: e.target.value }))} onClick={e => { try { e.target.showPicker() } catch(err) {} }} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Description</label>
+                      <textarea rows={3} value={auctionForm.description} onChange={e => setAuctionForm(f => ({ ...f, description: e.target.value }))} placeholder="Details about this piece..." className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Image</label>
+                      <div className="flex items-center gap-4">
+                        <div className="h-20 w-20 rounded-lg bg-black/50 border border-dashed border-white/20 flex items-center justify-center overflow-hidden shrink-0">
+                          {auctionForm.image ? <img src={auctionForm.image} alt="Preview" className="w-full h-full object-cover" /> : <ImageIcon className="text-white/20" />}
+                        </div>
+                        <input type="file" accept="image/*" onChange={handleAuctionImageUpload} className="text-sm text-white/50 file:mr-4 file:py-2.5 file:px-6 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20 cursor-pointer" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-end">
+                    <button onClick={saveAuction} className="px-8 py-3 bg-purple-500 hover:bg-purple-400 text-white rounded-lg font-bold flex items-center gap-2 transition-colors">
+                      <Save size={18} /> {editingAuctionId ? 'Update Auction' : 'Create Auction'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Auction List */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 bg-white/5 text-xs font-semibold text-white/50 uppercase tracking-wider">
+              {auctions.length} Auction{auctions.length !== 1 ? 's' : ''}
+            </div>
+            {auctions.length === 0 ? (
+              <div className="p-12 text-center text-white/30">No auctions yet. Click "New Auction" to create one.</div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {auctions.map(auction => {
+                  const isLive = new Date(`${auction.endDate}T${auction.endTime}:00+05:30`) > new Date()
+                  return (
+                    <div key={auction.id} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/5 transition-colors group">
+                      <div className="col-span-2">
+                        <img src={auction.image || '/vault-1.png'} alt={auction.title} className="w-16 h-12 object-cover rounded bg-black" />
+                      </div>
+                      <div className="col-span-5">
+                        <div className="font-bold text-sm text-white">{auction.title}</div>
+                        <div className="text-[10px] text-white/40 mt-0.5">{auction.brand}{auction.carBrand ? ` • ${auction.carBrand}` : ''}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${isLive ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-white/20'}`}>{isLive ? 'Live' : 'Ended'}</span>
+                          <span className="text-[10px] text-white/30">{auction.endDate} {auction.endTime} IST</span>
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-white/30">Start</div>
+                        <div className="font-mono text-sm text-gk-yellow">{auction.currency}{Number(auction.startingPrice).toLocaleString()}</div>
+                        <div className="text-[10px] text-purple-400">+{auction.currency}{Number(auction.minBidIncrement).toLocaleString()} inc</div>
+                      </div>
+                      <div className="col-span-3 flex justify-end gap-2 flex-wrap">
+                        <button onClick={() => viewAuctionBids(auction)} className="px-3 py-1.5 text-xs font-bold text-purple-300 bg-purple-500/10 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-colors whitespace-nowrap">View Bids</button>
+                        <button onClick={() => { setAuctionForm({ ...auction }); setEditingAuctionId(auction.id); setIsAddingAuction(true) }} className="p-2 text-white/50 hover:text-white bg-white/5 rounded-lg hover:bg-white/10 transition-colors"><Edit2 size={16} /></button>
+                        <button onClick={() => handleDeleteAuction(auction.id)} className="p-2 text-white/50 hover:text-gk-orange bg-white/5 rounded-lg hover:bg-red-500/10 transition-colors"><Trash2 size={16} /></button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Auction Bids Modal */}
+      <AnimatePresence>
+        {auctionBidsModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setAuctionBidsModal(null)}>
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+              className="bg-gk-black border border-purple-500/30 rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto shadow-[0_0_60px_rgba(168,85,247,0.2)]"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white">Auction Bids</h3>
+                  <p className="text-xs text-white/50 mt-1">{auctionBidsModal.auction.title}</p>
+                </div>
+                <button onClick={() => setAuctionBidsModal(null)} className="text-white/50 hover:text-white"><X size={20} /></button>
+              </div>
+              {auctionBidsLoading ? (
+                <div className="flex justify-center py-12"><div className="w-8 h-8 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin" /></div>
+              ) : auctionBidsModal.bids.length === 0 ? (
+                <div className="text-center py-12 text-white/40"><p className="text-4xl mb-4">🏷️</p><p>No bids placed yet.</p></div>
+              ) : (
+                <div className="space-y-3">
+                  {auctionBidsModal.bids.map((bid, i) => (
+                    <div key={bid.id} className={`flex items-center gap-4 p-4 rounded-xl border ${i === 0 ? 'bg-purple-500/15 border-purple-500/40' : 'bg-white/5 border-white/10'}`}>
+                      <div className={`text-lg font-black w-8 text-center ${i === 0 ? 'text-purple-400' : 'text-white/30'}`}>#{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white">{bid.bidderName}</div>
+                        <div className="text-xs text-white/50 truncate">{bid.contact}</div>
+                        <div className="text-[10px] text-white/30 mt-0.5">{new Date(bid.timestamp).toLocaleString('en-IN')}</div>
+                      </div>
+                      <div className="font-mono font-black text-lg text-purple-300 shrink-0">{auctionBidsModal.auction.currency || '₹'}{bid.amount.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

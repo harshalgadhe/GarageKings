@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, writeBatch, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, writeBatch, getDoc, setDoc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 
@@ -99,13 +99,138 @@ export async function deleteCar(id) {
 
 export async function updateCarOrder(newCarsArray) {
   checkFirebase();
-  // We use a batch write to update the orderIndex of all documents at once
   const batch = writeBatch(db);
   newCarsArray.forEach((car, index) => {
     const carRef = doc(db, 'cars', car.id);
     batch.update(carRef, { orderIndex: index });
   });
   await batch.commit();
+}
+
+// Bidding Functions
+export async function addBid(carId, bidData) {
+  checkFirebase();
+  const bidsRef = collection(db, 'cars', carId, 'bids');
+  const docRef = await addDoc(bidsRef, {
+    ...bidData,
+    amount: Number(bidData.amount), // Ensure it's a number for ordering
+    timestamp: new Date().toISOString()
+  });
+  return docRef.id;
+}
+
+export async function getBids(carId) {
+  checkFirebase();
+  const bidsRef = collection(db, 'cars', carId, 'bids');
+  const q = query(bidsRef, orderBy('amount', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export function listenToTopBid(carId, callback) {
+  if (!isFirebaseConfigured) return () => {};
+  const bidsRef = collection(db, 'cars', carId, 'bids');
+  const q = query(bidsRef, orderBy('amount', 'desc'), limit(1));
+  return onSnapshot(q, (snap) => {
+    if (!snap.empty) {
+      callback({ id: snap.docs[0].id, ...snap.docs[0].data() });
+    } else {
+      callback(null);
+    }
+  });
+}
+
+export function listenToBidCount(carId, callback) {
+  if (!isFirebaseConfigured) return () => {};
+  const bidsRef = collection(db, 'cars', carId, 'bids');
+  return onSnapshot(bidsRef, (snap) => {
+    callback(snap.size);
+  });
+}
+
+export function listenToRecentBids(carId, callback, count = 5) {
+  if (!isFirebaseConfigured) return () => {};
+  const bidsRef = collection(db, 'cars', carId, 'bids');
+  const q = query(bidsRef, orderBy('amount', 'desc'), limit(count));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+// ─── Standalone Auction Functions ───────────────────────────────────
+export async function getAuctions() {
+  checkFirebase();
+  try {
+    const col = collection(db, 'auctions');
+    const snap = await getDocs(col);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  } catch (e) {
+    console.error('Error fetching auctions:', e);
+    return [];
+  }
+}
+
+export async function addAuction(auction) {
+  checkFirebase();
+  const docRef = await addDoc(collection(db, 'auctions'), {
+    ...auction,
+    createdAt: new Date().toISOString()
+  });
+  return { id: docRef.id, ...auction };
+}
+
+export async function updateAuction(id, fields) {
+  checkFirebase();
+  await updateDoc(doc(db, 'auctions', id), fields);
+}
+
+export async function deleteAuction(id) {
+  checkFirebase();
+  await deleteDoc(doc(db, 'auctions', id));
+}
+
+export async function addAuctionBid(auctionId, bidData) {
+  checkFirebase();
+  const ref = collection(db, 'auctions', auctionId, 'bids');
+  const docRef = await addDoc(ref, {
+    ...bidData,
+    amount: Number(bidData.amount),
+    timestamp: new Date().toISOString()
+  });
+  return docRef.id;
+}
+
+export async function getAuctionBids(auctionId) {
+  checkFirebase();
+  const ref = collection(db, 'auctions', auctionId, 'bids');
+  const q = query(ref, orderBy('amount', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function listenToAuctionTopBid(auctionId, callback) {
+  if (!isFirebaseConfigured) return () => {};
+  const ref = collection(db, 'auctions', auctionId, 'bids');
+  const q = query(ref, orderBy('amount', 'desc'), limit(1));
+  return onSnapshot(q, (snap) => {
+    callback(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() });
+  });
+}
+
+export function listenToAuctionBidCount(auctionId, callback) {
+  if (!isFirebaseConfigured) return () => {};
+  const ref = collection(db, 'auctions', auctionId, 'bids');
+  return onSnapshot(ref, (snap) => callback(snap.size));
+}
+
+export function listenToAuctionRecentBids(auctionId, callback, count = 10) {
+  if (!isFirebaseConfigured) return () => {};
+  const ref = collection(db, 'auctions', auctionId, 'bids');
+  const q = query(ref, orderBy('amount', 'desc'), limit(count));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
 }
 
 /**

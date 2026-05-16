@@ -14,23 +14,25 @@ const PitStopLanes = forwardRef(function PitStopLanes(_props, ref) {
 
       <div className="relative px-8 md:px-16 max-w-5xl mx-auto z-10">
         <motion.div
-          className="text-center mb-20"
+          className="text-center mb-20 relative z-10 flex justify-center"
           initial={{ opacity: 0, y: 28 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-80px' }}
           transition={{ duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
         >
-          <p className="text-xs font-bold uppercase tracking-[0.35em] text-gk-orange">
-            Inventory Lanes
-          </p>
-          <h2 className="mt-6 text-4xl font-black italic tracking-tighter text-white md:text-6xl uppercase">
-            <span className="bg-gk-yellow text-gk-black px-6 py-2 inline-block shadow-[0_0_30px_rgba(255,184,0,0.4)]">
-              The Pit Stops
-            </span>
-          </h2>
-          <p className="mt-5 max-w-xl mx-auto text-base text-white/70 font-medium">
-            Four lanes. One vault. Find your niche.
-          </p>
+          <div className="inline-block bg-gk-black/90 backdrop-blur-md px-8 md:px-12 py-8 rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.9)]">
+            <p className="text-xs font-bold uppercase tracking-[0.35em] text-gk-orange">
+              Inventory Lanes
+            </p>
+            <h2 className="mt-6 text-4xl font-black italic tracking-tighter text-white md:text-6xl uppercase">
+              <span className="bg-gk-yellow text-gk-black px-6 py-2 inline-block shadow-[0_0_30px_rgba(255,184,0,0.4)]">
+                The Pit Stops
+              </span>
+            </h2>
+            <p className="mt-5 max-w-xl mx-auto text-base text-white/70 font-medium">
+              Four lanes. One vault. Find your niche.
+            </p>
+          </div>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-x-24 md:gap-y-12 items-start">

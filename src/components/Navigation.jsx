@@ -5,9 +5,6 @@ import { scrollToSection, useLenis } from '../providers/SmoothScroll'
 
 const links = [
   { id: 'hero', label: 'Home' },
-  { id: 'standard', label: 'Standard' },
-  { id: 'lanes', label: 'Lanes' },
-  { id: 'vault', label: 'Vault' },
   { id: 'drop', label: 'Drop' },
 ]
 
@@ -70,6 +67,15 @@ export default function Navigation({ activeSection }) {
                   </button>
                 </li>
               ))}
+              <li>
+                <a
+                  href="/auctions"
+                  className="whitespace-nowrap py-2 px-1 text-sm font-bold tracking-wide transition-colors duration-300 text-purple-300 hover:text-purple-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] flex items-center gap-1.5"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                  Auctions
+                </a>
+              </li>
               <li className="pl-4 border-l border-white/20">
                 <a
                   href="/marketplace"
@@ -132,11 +138,23 @@ export default function Navigation({ activeSection }) {
               ))}
               
               <motion.a
-                href="/marketplace"
+                href="/auctions"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
                 transition={{ duration: 0.4, delay: links.length * 0.05 + 0.1, ease: [0.22, 1, 0.36, 1] }}
+                className="flex items-center gap-2 text-2xl font-black uppercase tracking-widest text-purple-300 hover:text-purple-200 transition-colors"
+              >
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                Auctions
+              </motion.a>
+
+              <motion.a
+                href="/marketplace"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.4, delay: (links.length + 1) * 0.05 + 0.1, ease: [0.22, 1, 0.36, 1] }}
                 className="mt-4 px-12 py-4 rounded-full bg-gk-orange text-white text-xl font-black uppercase tracking-wider hover:bg-white hover:text-black transition-colors"
               >
                 Marketplace

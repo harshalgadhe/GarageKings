@@ -7,6 +7,7 @@ import Hero from '../components/sections/Hero'
 import GarageKingStandard from '../components/sections/GarageKingStandard'
 import PitStopLanes from '../components/sections/PitStopLanes'
 import VaultShowcase from '../components/sections/VaultShowcase'
+import AuctionPreview from '../components/sections/AuctionPreview'
 import DropRitual from '../components/sections/DropRitual'
 import { getCars, getGlobalSettings } from '../lib/db'
 
@@ -15,6 +16,7 @@ export default function Home() {
   const standardRef = useRef(null)
   const lanesRef = useRef(null)
   const vaultRef = useRef(null)
+  const auctionRef = useRef(null)
   const dropRef = useRef(null)
 
   const [heroImages, setHeroImages] = useState([])
@@ -48,7 +50,7 @@ export default function Home() {
   }, [])
 
   const pitStopRefs = useMemo(
-    () => [heroRef, standardRef, lanesRef, vaultRef, dropRef],
+    () => [heroRef, standardRef, lanesRef, vaultRef, auctionRef, dropRef],
     [],
   )
 
@@ -65,6 +67,7 @@ export default function Home() {
         <GarageKingStandard ref={standardRef} />
         <PitStopLanes ref={lanesRef} />
         <VaultShowcase ref={vaultRef} carouselCars={carouselCars} />
+        <AuctionPreview ref={auctionRef} />
         <DropRitual ref={dropRef} dropSettings={dropSettings} />
       </main>
     </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { getCars, isFirebaseConfigured, getGlobalSettings } from '../lib/db'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search } from 'lucide-react'
 import { BRAND } from '../data/content'
 
@@ -23,7 +23,6 @@ export default function Marketplace() {
       try {
         const [carData, settingsData] = await Promise.all([getCars(), getGlobalSettings()])
         setCars(carData)
-        // Ensure showPrices is strictly boolean
         setSettings({ showPrices: settingsData?.showPrices === true })
       } catch (err) {
         setError(err.message)
@@ -35,16 +34,14 @@ export default function Marketplace() {
   }, [])
 
   const filteredCars = useMemo(() => {
-    if (!searchQuery.trim()) return cars;
-    const query = searchQuery.toLowerCase();
-    return cars.filter(car => {
-      return (
-        (car.name && car.name.toLowerCase().includes(query)) ||
-        (car.brand && car.brand.toLowerCase().includes(query)) ||
-        (car.carBrand && car.carBrand.toLowerCase().includes(query)) ||
-        (car.lane && car.lane.toLowerCase().includes(query))
-      )
-    })
+    if (!searchQuery.trim()) return cars
+    const query = searchQuery.toLowerCase()
+    return cars.filter(car =>
+      (car.name && car.name.toLowerCase().includes(query)) ||
+      (car.brand && car.brand.toLowerCase().includes(query)) ||
+      (car.carBrand && car.carBrand.toLowerCase().includes(query)) ||
+      (car.lane && car.lane.toLowerCase().includes(query))
+    )
   }, [cars, searchQuery])
 
   return (
@@ -57,7 +54,6 @@ export default function Marketplace() {
             <ArrowLeft size={18} />
             <span className="text-sm font-bold uppercase tracking-wider">Back</span>
           </button>
-          
           <div className="flex items-center gap-3">
             <img src="/brand-logo.png" alt="Logo" className="w-8 h-8 rounded-full border border-white/20" />
             <span className="font-black tracking-tight">{BRAND.name}</span>
@@ -75,8 +71,6 @@ export default function Marketplace() {
           <p className="text-base md:text-lg text-white/50 max-w-xl mx-auto mb-8 md:mb-10">
             Exclusive die-cast inventory, curated and strictly graded. Secure your piece of the vault.
           </p>
-          
-          {/* Search Bar */}
           <div className="max-w-md mx-auto relative group">
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-white/40 group-focus-within:text-gk-yellow transition-colors">
               <Search size={20} />
@@ -103,19 +97,15 @@ export default function Marketplace() {
           </div>
         ) : isLoading ? (
           <div className="flex justify-center py-20 md:py-32">
-            <div className="animate-pulse flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-4">
               <div className="w-12 h-12 rounded-full border-4 border-gk-orange/30 border-t-gk-orange animate-spin" />
-              <div className="text-sm font-bold uppercase tracking-widest text-gk-orange">Unlocking Vault...</div>
+              <div className="text-sm font-bold uppercase tracking-widest text-gk-orange animate-pulse">Unlocking Vault...</div>
             </div>
           </div>
         ) : cars.length === 0 ? (
-          <div className="text-center py-20 md:py-32 text-white/50">
-            The marketplace is currently empty.
-          </div>
+          <div className="text-center py-20 md:py-32 text-white/50">The marketplace is currently empty.</div>
         ) : filteredCars.length === 0 ? (
-          <div className="text-center py-20 md:py-32 text-white/50">
-            No items found matching "{searchQuery}".
-          </div>
+          <div className="text-center py-20 md:py-32 text-white/50">No items found matching "{searchQuery}".</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredCars.map((car, index) => (
@@ -127,13 +117,8 @@ export default function Marketplace() {
                 className="group relative flex flex-col rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden hover:bg-white/10 transition-colors duration-500"
               >
                 {/* Image */}
-                <div 
-                  className="aspect-[4/3] bg-black/10 overflow-hidden relative"
-                  onContextMenu={(e) => e.preventDefault()}
-                >
-                  {/* Invisible Overlay to block right-clicks and dragging */}
+                <div className="aspect-[4/3] bg-black/10 overflow-hidden relative" onContextMenu={(e) => e.preventDefault()}>
                   <div className="absolute inset-0 z-30" />
-                  
                   <img
                     src={car.image || '/vault-1.png'}
                     alt={car.name}
@@ -148,14 +133,8 @@ export default function Marketplace() {
                 {/* Content */}
                 <div className="p-6 flex flex-col grow">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-white/40">
-                      {car.grade}
-                    </div>
-                    {car.scale && (
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-white/30 bg-white/5 px-2 py-0.5 rounded">
-                        {car.scale}
-                      </div>
-                    )}
+                    <div className="text-xs font-semibold uppercase tracking-wider text-white/40">{car.grade}</div>
+                    {car.scale && <div className="text-[10px] font-bold uppercase tracking-wider text-white/30 bg-white/5 px-2 py-0.5 rounded">{car.scale}</div>}
                   </div>
                   
                   {(car.brand || car.carBrand) && (
@@ -164,27 +143,21 @@ export default function Marketplace() {
                     </div>
                   )}
                   
-                  <h3 className="text-xl font-bold leading-tight mb-3 group-hover:text-gk-orange transition-colors">
-                    {car.name}
-                  </h3>
+                  <h3 className="text-xl font-bold leading-tight mb-3 group-hover:text-gk-orange transition-colors">{car.name}</h3>
 
                   {car.description && (
-                    <p className="text-sm text-white/50 line-clamp-3 mb-6">
-                      {car.description}
-                    </p>
+                    <p className="text-sm text-white/50 line-clamp-3 mb-4">{car.description}</p>
                   )}
                   
-                  <div className="mt-auto pt-4 border-t border-white/10 flex items-end justify-between">
-                    <div>
-                      {settings.showPrices === true ? (
-                        <>
-                          <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Vault Price</div>
-                          <div className="font-mono text-2xl text-white font-medium">{car.currency || '₹'}{car.price}</div>
-                        </>
-                      ) : (
-                        <div className="text-xs uppercase tracking-wider text-gk-orange font-bold">DM for Price</div>
-                      )}
-                    </div>
+                  <div className="mt-auto pt-4 border-t border-white/10">
+                    {settings.showPrices === true ? (
+                      <>
+                        <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Vault Price</div>
+                        <div className="font-mono text-2xl text-white font-medium">{car.currency || '₹'}{car.price}</div>
+                      </>
+                    ) : (
+                      <div className="text-xs uppercase tracking-wider text-gk-orange font-bold">DM for Price</div>
+                    )}
                   </div>
                 </div>
               </motion.div>
