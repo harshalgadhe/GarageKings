@@ -37,7 +37,7 @@ export default function Navigation({ activeSection }) {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
       >
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-8 pointer-events-auto">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-8 py-4 md:px-12 pointer-events-auto">
           <button
             type="button"
             onClick={() => handleNavClick('hero')}
@@ -58,17 +58,13 @@ export default function Navigation({ activeSection }) {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:block">
-            <ul className="flex gap-1 bg-white/5 backdrop-blur-md border border-white/10 rounded-full p-1.5">
-              {links.map((link, i) => (
+            <ul className="flex gap-6">
+              {links.map((link) => (
                 <li key={link.id}>
                   <button
                     type="button"
                     onClick={() => handleNavClick(link.id)}
-                    className={`whitespace-nowrap rounded-full px-5 py-2 text-sm font-semibold transition-all duration-300 ${
-                      activeSection === i
-                        ? 'bg-gk-yellow text-gk-black shadow-[0_0_20px_rgba(255,179,0,0.4)]'
-                        : 'text-white/60 hover:text-white hover:bg-white/10'
-                    }`}
+                    className="whitespace-nowrap py-2 px-1 text-sm font-bold tracking-wide transition-colors duration-300 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] hover:text-gk-yellow"
                   >
                     {link.label}
                   </button>
