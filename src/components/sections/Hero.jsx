@@ -55,7 +55,7 @@ const Hero = forwardRef(function Hero(_props, ref) {
           ref={carRef}
           src="/hotwheels-car.png"
           alt="Garage Kings Vault"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover object-[center_75%] md:object-center"
         />
         {/* Subtle gradient overlay to ensure the bottom blends into the vault */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-gk-black z-10" />
