@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useActiveSection } from './hooks/useScrollJourney'
 import { SmoothScrollProvider } from './providers/SmoothScroll'
 import Navigation from './components/Navigation'
-import PitLaneJourney from './components/PitLaneJourney'
+
 import AmbientScene from './components/AmbientScene'
 import Hero from './components/sections/Hero'
 import GarageKingStandard from './components/sections/GarageKingStandard'
@@ -28,9 +28,9 @@ function GarageKingsApp() {
     <div className="relative bg-gk-black text-white">
       <AmbientScene />
       <Navigation activeSection={activeSection} />
-      <PitLaneJourney />
 
-      <main className="relative z-10">
+      {/* Main content full width for centralized scrolling */}
+      <main className="relative z-10 w-full">
         <Hero ref={heroRef} />
         <GarageKingStandard ref={standardRef} />
         <PitStopLanes ref={lanesRef} />

@@ -1,12 +1,13 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-gk-black: #0e0e0e;
-  --color-gk-yellow: #ffb800;
-  --color-gk-surface: #141414;
-  --color-gk-surface-2: #1a1a1a;
-  --color-gk-border: #2a2a2a;
-  --color-gk-muted: #888888;
+  --color-gk-black: #050507; /* Deep midnight carbon for maximum OLED pop */
+  --color-gk-yellow: #FFB300; /* Vivid metallic gold/yellow */
+  --color-gk-orange: #FF3300; /* Aggressive racing red-orange */
+  --color-gk-surface: #0a0a0d; /* Slightly lighter cool surface */
+  --color-gk-surface-2: #111116; /* Elevated cool gray surface */
+  --color-gk-border: #202028; /* Cool, sleek border */
+  --color-gk-muted: #9ba1a6; /* Premium metallic gray for muted text */
   --font-grotesk: 'Space Grotesk', system-ui, sans-serif;
 }
 
@@ -34,10 +35,16 @@ html {
 body {
   margin: 0;
   font-family: var(--font-grotesk);
-  background-color: #0e0e0e;
+  background-color: var(--color-gk-black);
   color: #f5f5f5;
   overflow-x: clip;
   -webkit-font-smoothing: antialiased;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 [id] {
@@ -45,16 +52,28 @@ body {
 }
 
 ::selection {
-  background: #ffb800;
-  color: #0e0e0e;
+  background: var(--color-gk-yellow);
+  color: var(--color-gk-black);
 }
 
 .gk-grid-floor {
   background-image:
-    linear-gradient(rgba(255, 184, 0, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 184, 0, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(255, 179, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 179, 0, 0.03) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 75%);
+}
+
+.gk-checkered-flag {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.015) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.015) 75%, rgba(255, 255, 255, 0.015)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.015) 25%, var(--color-gk-black) 25%, var(--color-gk-black) 75%, rgba(255, 255, 255, 0.015) 75%, rgba(255, 255, 255, 0.015));
+  background-position: 0 0, 20px 20px;
+  background-size: 40px 40px;
+}
+
+.gk-hotwheels-track {
+  background: linear-gradient(90deg, #cc2900 0%, var(--color-gk-orange) 20%, var(--color-gk-orange) 80%, #cc2900 100%);
+  box-shadow: 0 0 20px rgba(255, 51, 0, 0.5);
 }
 
 .gk-race-scene {
@@ -80,15 +99,15 @@ body {
   justify-content: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  background: #ffb800;
-  color: #0e0e0e;
+  background: var(--color-gk-yellow);
+  color: var(--color-gk-black);
   font-weight: 700;
   transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
 }
 
 .gk-btn-primary:hover {
-  background: #ffc933;
-  box-shadow: 0 0 32px rgba(255, 184, 0, 0.35);
+  background: #FFD54F;
+  box-shadow: 0 0 32px rgba(255, 179, 0, 0.4);
   transform: translateY(-1px);
 }
 
