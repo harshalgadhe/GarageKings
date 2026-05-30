@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut } from 'lucide-react'
-import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, auth } from '../lib/db'
+import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 
@@ -46,6 +46,28 @@ export default function Admin() {
   const [auctionBidsModal, setAuctionBidsModal] = useState(null)
   const [auctionBidsLoading, setAuctionBidsLoading] = useState(false)
 
+  // Receipt state
+  const [receipts, setReceipts] = useState([])
+  const [isAddingReceipt, setIsAddingReceipt] = useState(false)
+  const [receiptSearch, setReceiptSearch] = useState('')
+  const [receiptForm, setReceiptForm] = useState({
+    receiptNumber: '',
+    dateString: '',
+    companyName: 'Garage Kings India',
+    companyLocation: 'Delhi',
+    customerName: '',
+    customerPhone: '',
+    customerAddress: '',
+    formatType: 'standard', // 'standard', 'prebooking', 'auction', 'custom'
+    items: [{ qty: 1, description: '', amount: '' }],
+    shippingCharges: 150,
+    includeShipping: true,
+    taxPercent: 0,
+    footerNote: 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.',
+    pendingBalance: ''
+  })
+  const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
+
   useEffect(() => {
     if (!isFirebaseConfigured) {
       setDbError("Missing Firebase configuration. Please add your keys to the .env file.")
@@ -74,10 +96,16 @@ export default function Admin() {
 
   const loadData = async () => {
     try {
-      const [carData, settingsData, auctionData] = await Promise.all([getCars(), getGlobalSettings(), getAuctions()])
+      const [carData, settingsData, auctionData, receiptData] = await Promise.all([
+        getCars(),
+        getGlobalSettings(),
+        getAuctions(),
+        getReceipts()
+      ])
       setCars(carData)
       setAuctions(auctionData)
       setGlobalSettings(settingsData)
+      setReceipts(receiptData)
       setTempAdminPath(settingsData?.adminPath || '9f7a4b2c-8d1e-45a9-b3f6-c1d2e8a7b9f0')
       const todayStr = new Date().toISOString().split('T')[0]
       setTempDropDate(settingsData?.dropDate || todayStr)
@@ -282,6 +310,124 @@ export default function Admin() {
     finally { setAuctionBidsLoading(false) }
   }
 
+  // Receipt helper functions
+  const suggestNextReceiptNumber = (records) => {
+    if (!records || records.length === 0) return 'RT00001';
+    let maxNum = 0;
+    records.forEach(r => {
+      const match = r.receiptNumber?.match(/RT(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    const nextNum = maxNum + 1;
+    return `RT${String(nextNum).padStart(5, '0')}`;
+  }
+
+  const formatReceiptDate = (d = new Date()) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const dayName = days[d.getDay()];
+    const dateNum = d.getDate();
+    const monthName = months[d.getMonth()];
+    const year = d.getFullYear();
+    
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 should be 12
+    
+    return `${dayName}, ${dateNum} ${monthName} ${year} - ${hours}:${minutes} ${ampm}`;
+  }
+
+  const handleFormatTypeChange = (type) => {
+    let footerNote = '';
+    if (type === 'standard') {
+      footerNote = 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.';
+    } else if (type === 'prebooking') {
+      footerNote = 'This receipt is for the prebooking of the item. Rest of the payment is due when the stock arrives. Prebookings are non-refundable unless unfulfilled by Garage Kings India.';
+    } else if (type === 'auction') {
+      footerNote = 'This receipt confirms the successful win of the auction item. Thank you for bidding! In the event that the order cannot be fulfilled from our end, a full refund will be issued.';
+    } else {
+      footerNote = '';
+    }
+    
+    setReceiptForm(prev => ({
+      ...prev,
+      formatType: type,
+      footerNote
+    }));
+  }
+
+  const handleSaveReceipt = async () => {
+    const { receiptNumber, customerName, customerPhone, items, formatType, footerNote, companyName, companyLocation, pendingBalance } = receiptForm;
+    if (!receiptNumber.trim()) return alert("Receipt Number is required");
+    if (!customerName.trim()) return alert("Customer Name is required");
+    if (!companyName.trim()) return alert("Company Name is required");
+    if (!companyLocation.trim()) return alert("Company Location is required");
+    if (items.some(it => !it.description.trim() || it.amount === '')) {
+      return alert("All item descriptions and amounts are required");
+    }
+
+    try {
+      // Calculate totals
+      const subtotal = items.reduce((acc, it) => acc + (Number(it.qty) * Number(it.amount)), 0);
+      const shipping = receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0;
+      const taxRate = Number(receiptForm.taxPercent) / 100;
+      const taxAmount = (subtotal + shipping) * taxRate;
+      const totalAmount = subtotal + shipping + taxAmount;
+
+      const receiptData = {
+        receiptNumber: receiptForm.receiptNumber.trim(),
+        dateString: receiptForm.dateString || formatReceiptDate(),
+        companyName: companyName.trim(),
+        companyLocation: companyLocation.trim(),
+        customerName: receiptForm.customerName.trim(),
+        customerPhone: receiptForm.customerPhone.trim(),
+        customerAddress: receiptForm.customerAddress.trim(),
+        formatType,
+        items: items.map(it => ({ qty: Number(it.qty), description: it.description.trim(), amount: Number(it.amount) })),
+        includeShipping: receiptForm.includeShipping,
+        shippingCharges: shipping,
+        taxPercent: Number(receiptForm.taxPercent),
+        taxAmount,
+        totalAmount,
+        pendingBalance: pendingBalance ? Number(pendingBalance) : 0,
+        footerNote: footerNote.trim()
+      };
+
+      await addReceipt(receiptData);
+      
+      const refreshed = await getReceipts();
+      setReceipts(refreshed);
+      setIsAddingReceipt(false);
+      alert("Receipt saved successfully!");
+    } catch (e) {
+      alert("Failed to save receipt: " + e.message);
+    }
+  }
+
+  const handleDeleteReceipt = async (id) => {
+    if (confirm("Are you sure you want to delete this receipt?")) {
+      try {
+        await deleteReceipt(id);
+        setReceipts(prev => prev.filter(r => r.id !== id));
+      } catch (e) {
+        alert("Failed to delete receipt: " + e.message);
+      }
+    }
+  }
+
+  const handlePrintReceipt = (receipt) => {
+    setActiveReceiptPreview(receipt);
+    setTimeout(() => {
+      window.print();
+    }, 250);
+  }
+
   if (isAuthLoading) {
     return (
       <div className="min-h-[100svh] bg-gk-black flex flex-col items-center justify-center gap-6">
@@ -386,6 +532,30 @@ export default function Admin() {
               <Plus size={16} /> New Auction
             </button>
             <button 
+              onClick={() => {
+                setReceiptForm({
+                  receiptNumber: suggestNextReceiptNumber(receipts),
+                  dateString: formatReceiptDate(),
+                  companyName: 'Garage Kings India',
+                  companyLocation: 'Delhi',
+                  customerName: '',
+                  customerPhone: '',
+                  customerAddress: '',
+                  formatType: 'standard',
+                  items: [{ qty: 1, description: '', amount: '' }],
+                  shippingCharges: 150,
+                  includeShipping: true,
+                  taxPercent: 0,
+                  footerNote: 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.',
+                  pendingBalance: ''
+                })
+                setIsAddingReceipt(true)
+              }}
+              className={`px-6 py-2.5 rounded-full bg-blue-500 text-white text-sm font-bold flex items-center gap-2 hover:bg-blue-450 transition-colors ${adminTab !== 'receipts' ? 'hidden' : ''}`}
+            >
+              <Plus size={16} /> New Receipt
+            </button>
+            <button 
               onClick={handleLogout}
               className="px-4 py-2.5 rounded-full bg-white/5 border border-white/10 text-white/50 text-sm font-bold flex items-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-colors"
             >
@@ -396,12 +566,12 @@ export default function Admin() {
 
         {/* Tab Switcher */}
         <div className="flex gap-2 mb-8 border-b border-white/8 pb-0">
-          {['inventory', 'auctions'].map(t => (
+          {['inventory', 'auctions', 'receipts'].map(t => (
             <button key={t} onClick={() => setAdminTab(t)}
               className={`px-5 py-3 text-sm font-black uppercase tracking-wider rounded-t-xl transition-colors ${
                 adminTab === t ? 'bg-white/8 border border-white/10 border-b-0 text-white' : 'text-white/30 hover:text-white/60'
               }`}>
-              {t === 'inventory' ? 'Inventory' : '🏷️ Auctions'}
+              {t === 'inventory' ? 'Inventory' : t === 'auctions' ? '🏷️ Auctions' : '🧾 Receipts'}
             </button>
           ))}
         </div>
@@ -895,6 +1065,681 @@ export default function Admin() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── RECEIPTS TAB PANEL ───────────────────────────── */}
+      {adminTab === 'receipts' && (
+        <div className="mt-2 space-y-6 no-print">
+          {/* Receipts Form (Add / Edit) */}
+          <AnimatePresence>
+            {isAddingReceipt && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-8">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-8">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-white">Create New Receipt</h2>
+                    <button onClick={() => setIsAddingReceipt(false)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* Form Controls - 7 cols on large screens */}
+                    <div className="lg:col-span-7 space-y-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Receipt Number *</label>
+                          <input type="text" value={receiptForm.receiptNumber} onChange={e => setReceiptForm(prev => ({ ...prev, receiptNumber: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Date & Time *</label>
+                          <input type="text" value={receiptForm.dateString} onChange={e => setReceiptForm(prev => ({ ...prev, dateString: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
+                        <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Company Details</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Company Name *</label>
+                            <input type="text" placeholder="e.g. Garage Kings India" value={receiptForm.companyName} onChange={e => setReceiptForm(prev => ({ ...prev, companyName: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Location / City *</label>
+                            <input type="text" placeholder="e.g. Delhi" value={receiptForm.companyLocation} onChange={e => setReceiptForm(prev => ({ ...prev, companyLocation: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
+                        <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Customer Details</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Name *</label>
+                            <input type="text" placeholder="e.g. Rasesh Talati" value={receiptForm.customerName} onChange={e => setReceiptForm(prev => ({ ...prev, customerName: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Phone</label>
+                            <input type="text" placeholder="e.g. 9819169632" value={receiptForm.customerPhone} onChange={e => setReceiptForm(prev => ({ ...prev, customerPhone: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Address</label>
+                          <textarea rows={3} placeholder="Full shipping address..." value={receiptForm.customerAddress} onChange={e => setReceiptForm(prev => ({ ...prev, customerAddress: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                          <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Line Items</h3>
+                          
+                          {/* QUICK AUTOFILL SELECTOR */}
+                          <div className="flex flex-wrap gap-2">
+                            <select 
+                              onChange={e => {
+                                if (!e.target.value) return;
+                                const car = cars.find(c => c.id === e.target.value);
+                                if (car) {
+                                  const newItem = { qty: 1, description: `${car.brand} ${car.name}${car.grade ? ' - ' + car.grade : ''}`, amount: String(car.price) };
+                                  setReceiptForm(prev => {
+                                    const first = prev.items[0];
+                                    const isEmpty = prev.items.length === 1 && !first.description && !first.amount;
+                                    return {
+                                      ...prev,
+                                      items: isEmpty ? [newItem] : [...prev.items, newItem]
+                                    };
+                                  });
+                                }
+                                e.target.value = ''; // Reset selector
+                              }}
+                              className="bg-[#111116] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white/80 hover:text-white cursor-pointer focus:outline-none outline-none max-w-[150px] md:max-w-xs"
+                            >
+                              <option value="" className="bg-[#111116] text-white">+ From Inventory</option>
+                              {cars.map(c => (
+                                <option key={c.id} value={c.id} className="bg-[#111116] text-white">{c.brand} {c.name} ({c.currency || '₹'}{c.price})</option>
+                              ))}
+                            </select>
+
+                            <select 
+                              onChange={e => {
+                                if (!e.target.value) return;
+                                const auction = auctions.find(a => a.id === e.target.value);
+                                if (auction) {
+                                  const newItem = { qty: 1, description: `${auction.brand} ${auction.title}${auction.grade ? ' - ' + auction.grade : ''}`, amount: String(auction.startingPrice) };
+                                  setReceiptForm(prev => {
+                                    const first = prev.items[0];
+                                    const isEmpty = prev.items.length === 1 && !first.description && !first.amount;
+                                    return {
+                                      ...prev,
+                                      items: isEmpty ? [newItem] : [...prev.items, newItem]
+                                    };
+                                  });
+                                }
+                                e.target.value = ''; // Reset selector
+                              }}
+                              className="bg-[#111116] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white/80 hover:text-white cursor-pointer focus:outline-none outline-none max-w-[150px] md:max-w-xs"
+                            >
+                              <option value="" className="bg-[#111116] text-white">+ From Auctions</option>
+                              {auctions.map(a => (
+                                <option key={a.id} value={a.id} className="bg-[#111116] text-white">{a.brand} {a.title} ({a.currency || '₹'}{a.startingPrice})</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {receiptForm.items.map((item, index) => (
+                          <div key={index} className="flex gap-3 items-center">
+                            <div className="w-16">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Qty</label>
+                              <input type="number" min="1" value={item.qty} onChange={e => {
+                                const newItems = [...receiptForm.items];
+                                newItems[index].qty = Math.max(1, parseInt(e.target.value) || 1);
+                                setReceiptForm(prev => ({ ...prev, items: newItems }));
+                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-center text-white focus:outline-none" />
+                            </div>
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Description</label>
+                              <input type="text" placeholder="e.g. Mini GT F1 - 999" value={item.description} onChange={e => {
+                                const newItems = [...receiptForm.items];
+                                newItems[index].description = e.target.value;
+                                setReceiptForm(prev => ({ ...prev, items: newItems }));
+                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                            </div>
+                            <div className="w-28">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
+                              <input type="number" placeholder="2000" value={item.amount} onChange={e => {
+                                const newItems = [...receiptForm.items];
+                                newItems[index].amount = e.target.value;
+                                setReceiptForm(prev => ({ ...prev, items: newItems }));
+                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-right text-white focus:outline-none focus:border-blue-500" />
+                            </div>
+                            {receiptForm.items.length > 1 && (
+                              <button onClick={() => {
+                                const newItems = receiptForm.items.filter((_, i) => i !== index);
+                                setReceiptForm(prev => ({ ...prev, items: newItems }));
+                              }} className="mt-5 p-2 text-white/40 hover:text-gk-orange hover:bg-white/5 rounded-lg transition-colors cursor-pointer">
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        
+                        <button onClick={() => {
+                          setReceiptForm(prev => ({
+                            ...prev,
+                            items: [...prev.items, { qty: 1, description: '', amount: '' }]
+                          }));
+                        }} className="px-3 py-2 rounded-lg bg-white/5 border border-dashed border-white/10 text-xs font-semibold text-white/70 hover:text-white hover:bg-white/10 transition-colors w-full flex items-center justify-center gap-1.5 mt-2 cursor-pointer">
+                          <Plus size={14} /> Add Item
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-black/20 p-4 border border-white/5 rounded-xl">
+                        {/* Shipping quick-toggle */}
+                        <div className="flex flex-col justify-center">
+                          <label className="flex items-center gap-2.5 cursor-pointer group">
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${receiptForm.includeShipping ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/20 bg-black group-hover:border-white/40'}`}>
+                              {receiptForm.includeShipping && <svg viewBox="0 0 14 14" fill="none" className="w-2.5 h-2.5"><path d="M3 7.5L5.5 10L11 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </div>
+                            <input type="checkbox" className="hidden" checked={receiptForm.includeShipping} onChange={e => setReceiptForm(prev => ({ ...prev, includeShipping: e.target.checked }))} />
+                            <span className="text-xs font-semibold text-white/80 group-hover:text-white transition-colors">Include Shipping</span>
+                          </label>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Shipping Fee (₹)</label>
+                          <input 
+                            type="number" 
+                            min="0" 
+                            disabled={!receiptForm.includeShipping}
+                            value={receiptForm.shippingCharges} 
+                            onChange={e => setReceiptForm(prev => ({ ...prev, shippingCharges: Math.max(0, parseInt(e.target.value) || 0) }))} 
+                            className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none disabled:opacity-30 disabled:cursor-not-allowed" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Tax Rate (%)</label>
+                          <input type="number" min="0" value={receiptForm.taxPercent} onChange={e => setReceiptForm(prev => ({ ...prev, taxPercent: Math.max(0, parseInt(e.target.value) || 0) }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Receipt Format</label>
+                          <select value={receiptForm.formatType} onChange={e => handleFormatTypeChange(e.target.value)} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none cursor-pointer outline-none">
+                            <option value="standard" className="bg-[#111116] text-white">Standard Sale</option>
+                            <option value="prebooking" className="bg-[#111116] text-white">Prebooking</option>
+                            <option value="auction" className="bg-[#111116] text-white">Auction Win</option>
+                            <option value="custom" className="bg-[#111116] text-white">Custom Format</option>
+                          </select>
+                        </div>
+                        {receiptForm.formatType === 'prebooking' && (
+                          <div className="md:col-span-4 border-t border-white/5 pt-4 mt-2">
+                            <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Pending Balance / Remaining Amount (₹)</label>
+                            <input 
+                              type="number" 
+                              min="0" 
+                              placeholder="Enter remaining balance to be paid before delivery (e.g. 4000)" 
+                              value={receiptForm.pendingBalance} 
+                              onChange={e => setReceiptForm(prev => ({ ...prev, pendingBalance: e.target.value }))} 
+                              className="w-full bg-black/55 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 font-semibold" 
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl">
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Footer Refund / Payment Note</label>
+                        <textarea rows={2} value={receiptForm.footerNote} onChange={e => setReceiptForm(prev => ({ ...prev, footerNote: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Custom note to appear at the bottom of the receipt..." />
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-3">
+                        <button onClick={() => setIsAddingReceipt(false)} className="px-6 py-3 rounded-lg border border-white/10 hover:bg-white/5 text-sm font-semibold transition-colors cursor-pointer">Cancel</button>
+                        <button onClick={handleSaveReceipt} className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold flex items-center gap-2 transition-colors cursor-pointer">
+                          <Save size={18} /> Save Receipt
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* LIVE PREVIEW CONTAINER - 5 cols on large screens */}
+                    <div className="lg:col-span-5 space-y-4">
+                      <h3 className="text-xs font-black uppercase text-white/50 tracking-wider">Live Preview</h3>
+                      
+                      {/* High-fidelity Receipt Preview */}
+                      <div className="bg-white text-black p-6 rounded-xl shadow-2xl overflow-hidden font-sans text-xs flex flex-col justify-between relative" style={{ minHeight: '560px', color: '#000000', backgroundColor: '#ffffff' }}>
+                        {/* Faint Premium Brand Watermark */}
+                        <div className="absolute pointer-events-none select-none z-0 text-center" style={{
+                          top: '50%',
+                          left: '50%',
+                          transform: 'translate(-50%, -50%) rotate(-20deg)',
+                          fontSize: '36px',
+                          fontWeight: '900',
+                          letterSpacing: '0.25em',
+                          background: 'linear-gradient(135deg, rgba(43, 149, 201, 0.12) 0%, rgba(67, 56, 202, 0.09) 50%, rgba(99, 102, 241, 0.06) 100%)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          color: 'rgba(43, 149, 201, 0.08)',
+                          width: '90%',
+                          textAlign: 'center',
+                          lineHeight: '1.2',
+                          fontFamily: '"Outfit", "Montserrat", "Inter", system-ui, sans-serif',
+                          textTransform: 'uppercase',
+                          wordBreak: 'break-word'
+                        }}>
+                          {receiptForm.companyName || 'Garage Kings'}
+                        </div>
+
+                        <div className="relative z-10 flex flex-col justify-between h-full w-full">
+                          <div>
+                            {/* Header */}
+                            <div className="flex justify-between items-start gap-4 mb-8">
+                              <div>
+                                <h1 className="text-xl font-black leading-none tracking-tight" style={{ fontFamily: 'system-ui, sans-serif' }}>{receiptForm.companyName || 'Garage Kings India'}</h1>
+                                <p className="text-gray-600 text-[10px] mt-1.5">{receiptForm.companyLocation || 'Delhi'}</p>
+                              </div>
+                              <div className="text-right">
+                                <h2 className="text-xl font-black text-gray-800 tracking-tight leading-none mb-1">Receipt</h2>
+                                <p className="text-[9px] text-gray-600 font-semibold mt-1">Receipt # &nbsp;{receiptForm.receiptNumber || 'RTXXXXX'}</p>
+                                <p className="text-[8px] text-gray-500 font-medium mt-1">Date &nbsp;{receiptForm.dateString || 'Saturday, 30 May 2026 - 2:16 PM'}</p>
+                              </div>
+                            </div>
+
+                          {/* "To" Section */}
+                          <div className="mb-6">
+                            <div className="bg-[#2b95c9] text-white px-3 py-1 font-bold text-[10px] tracking-wider mb-2.5 rounded-sm">To</div>
+                            <div className="px-1 space-y-0.5 text-gray-800 text-[10px] leading-relaxed">
+                              {receiptForm.customerName ? (
+                                <>
+                                  <div className="font-bold text-black text-[11px]">{receiptForm.customerName}</div>
+                                  {receiptForm.customerPhone && <div className="font-semibold">{receiptForm.customerPhone}</div>}
+                                  {receiptForm.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-0.5">{receiptForm.customerAddress}</div>}
+                                </>
+                              ) : (
+                                <div className="text-gray-400 italic">No customer details set.</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Table Section */}
+                          <div className="mb-6">
+                            {/* Table Header */}
+                            <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-3 py-1.5 font-bold text-[9px] tracking-wider rounded-sm">
+                              <div className="col-span-2 text-center">Qty</div>
+                              <div className="col-span-7">Description</div>
+                              <div className="col-span-3 text-right">Amount</div>
+                            </div>
+                            
+                            {/* Table Rows */}
+                            <div className="divide-y divide-gray-150 px-1">
+                              {receiptForm.items.map((it, idx) => (
+                                <div key={idx} className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
+                                  <div className="col-span-2 text-center text-gray-600">{it.qty}</div>
+                                  <div className="col-span-7 font-medium text-gray-800 truncate">{it.description || <span className="text-gray-300 italic">Description...</span>}</div>
+                                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{(Number(it.qty) * (Number(it.amount) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                </div>
+                              ))}
+                              
+                              {/* Shipping row */}
+                              {receiptForm.includeShipping && (
+                                <div className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
+                                  <div className="col-span-2 text-center text-gray-600">1</div>
+                                  <div className="col-span-7 font-medium text-gray-800">Shipping Charges</div>
+                                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(receiptForm.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Summary and Footer */}
+                        <div>
+                          <div className="border-t border-gray-300 pt-3 space-y-1.5">
+                            {/* Tax Row */}
+                            <div className="flex justify-between items-center text-[10px] text-gray-600">
+                              <span>Including Tax ({receiptForm.taxPercent}%)</span>
+                              <span className="font-mono font-semibold">₹{((receiptForm.items.reduce((acc, it) => acc + (Number(it.qty) * (Number(it.amount) || 0)), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (Number(receiptForm.taxPercent) / 100)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                            
+                             {/* Total Row */}
+                            <div className="flex justify-between items-center text-sm font-black text-black pt-1">
+                              <span>Total Paid</span>
+                              <span className="font-mono font-black text-base">₹{
+                                (
+                                  (receiptForm.items.reduce((acc, it) => acc + (Number(it.qty) * (Number(it.amount) || 0)), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (1 + (Number(receiptForm.taxPercent) / 100))
+                                ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                              }</span>
+                            </div>
+
+                            {/* Pending Balance Row */}
+                            {receiptForm.formatType === 'prebooking' && receiptForm.pendingBalance && Number(receiptForm.pendingBalance) > 0 && (
+                              <div className="flex justify-between items-center text-[10px] text-red-600 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5">
+                                <span>Balance Due before Delivery</span>
+                                <span className="font-mono font-bold text-red-650">₹{Number(receiptForm.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Footer refund policy statement */}
+                          {receiptForm.footerNote && (
+                            <div className="mt-8 text-center text-[9px] text-gray-800 font-medium leading-normal px-2">
+                              {receiptForm.footerNote}
+                            </div>
+                          )}
+                        </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Receipts History List */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+            <div className="p-4 md:p-6 border-b border-white/10 bg-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-white text-base">Receipt Records</h3>
+                <p className="text-xs text-white/50 mt-1">Search, print, or manage previously generated client receipts.</p>
+              </div>
+              <div className="flex gap-3">
+                <input 
+                  type="text" 
+                  placeholder="Search customer, phone, or RT#..." 
+                  value={receiptSearch} 
+                  onChange={e => setReceiptSearch(e.target.value)} 
+                  className="bg-black/50 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 w-full md:w-80" 
+                />
+              </div>
+            </div>
+
+            {/* List */}
+            {receipts.length === 0 ? (
+              <div className="p-12 text-center text-white/30">
+                <p className="text-4xl mb-4">🧾</p>
+                <p>No receipt history yet. Click "New Receipt" to create one.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {receipts
+                  .filter(r => {
+                    const search = receiptSearch.toLowerCase();
+                    return r.customerName?.toLowerCase().includes(search) || 
+                           r.customerPhone?.toLowerCase().includes(search) || 
+                           r.receiptNumber?.toLowerCase().includes(search);
+                  })
+                  .map(receipt => (
+                    <div key={receipt.id} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/5 transition-colors group">
+                      <div className="col-span-2">
+                        <div className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</div>
+                        <div className="text-[9px] text-white/40 font-mono mt-0.5">{receipt.dateString?.split(' - ')[0]}</div>
+                      </div>
+                      <div className="col-span-5">
+                        <div className="font-bold text-sm text-white">{receipt.customerName}</div>
+                        <div className="text-xs text-white/50 truncate mt-0.5">{receipt.customerPhone || 'No Phone'}</div>
+                        <div className="text-[10px] text-white/35 mt-1 truncate">
+                          {receipt.items?.map(it => `${it.qty}x ${it.description}`).join(', ')}
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          receipt.formatType === 'prebooking' ? 'bg-orange-500/20 text-orange-350' :
+                          receipt.formatType === 'auction' ? 'bg-purple-500/20 text-purple-300' :
+                          'bg-blue-500/20 text-blue-300'
+                        }`}>
+                          {receipt.formatType === 'prebooking' ? 'Prebooking' : 
+                           receipt.formatType === 'auction' ? 'Auction Win' : 'Sale'}
+                        </span>
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
+                      </div>
+                      <div className="col-span-1 flex justify-end gap-2">
+                        <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-2 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
+                          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                        </button>
+                        <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-2 text-white/40 hover:text-gk-orange bg-white/5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Screen Preview Modal / Overlay when customer wants to review details */}
+      <AnimatePresence>
+        {activeReceiptPreview && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm no-print" onClick={() => setActiveReceiptPreview(null)}>
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-gk-black border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-6 shadow-[0_0_50px_rgba(59,130,246,0.15)] animate-none" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center pb-4 border-b border-white/10">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Receipt Details</h3>
+                  <p className="text-xs text-white/50 mt-1 font-mono">Reference: {activeReceiptPreview.receiptNumber}</p>
+                </div>
+                <button onClick={() => setActiveReceiptPreview(null)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+              </div>
+
+              {/* Receipt Body in screen view */}
+              <div className="bg-white text-black p-8 rounded-xl shadow-inner font-sans text-xs flex flex-col justify-between relative overflow-hidden" style={{ minHeight: '520px', color: '#000000', backgroundColor: '#ffffff' }}>
+                {/* Faint Premium Brand Watermark */}
+                <div className="absolute pointer-events-none select-none z-0 text-center" style={{
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) rotate(-20deg)',
+                  fontSize: '48px',
+                  fontWeight: '900',
+                  letterSpacing: '0.25em',
+                  background: 'linear-gradient(135deg, rgba(43, 149, 201, 0.12) 0%, rgba(67, 56, 202, 0.09) 50%, rgba(99, 102, 241, 0.06) 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  color: 'rgba(43, 149, 201, 0.08)',
+                  width: '90%',
+                  textAlign: 'center',
+                  lineHeight: '1.2',
+                  fontFamily: '"Outfit", "Montserrat", "Inter", system-ui, sans-serif',
+                  textTransform: 'uppercase',
+                  wordBreak: 'break-word'
+                }}>
+                  {activeReceiptPreview.companyName || 'Garage Kings'}
+                </div>
+
+                <div className="relative z-10 flex flex-col justify-between h-full w-full">
+                  <div>
+                  {/* Header */}
+                  <div className="flex justify-between items-start gap-4 mb-8">
+                    <div>
+                      <h1 className="text-2xl font-black leading-none tracking-tight">{activeReceiptPreview.companyName || 'Garage Kings India'}</h1>
+                      <p className="text-gray-600 text-xs mt-2">{activeReceiptPreview.companyLocation || 'Delhi'}</p>
+                    </div>
+                    <div className="text-right">
+                      <h2 className="text-2xl font-black text-gray-800 tracking-tight leading-none mb-1">Receipt</h2>
+                      <p className="text-xs text-gray-600 font-semibold mt-1.5">Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</p>
+                      <p className="text-[10px] text-gray-500 font-medium mt-1">Date &nbsp;{activeReceiptPreview.dateString}</p>
+                    </div>
+                  </div>
+
+                  {/* "To" Section */}
+                  <div className="mb-6">
+                    <div className="bg-[#2b95c9] text-white px-3 py-1 font-bold text-[10px] tracking-wider mb-2.5 rounded-sm">To</div>
+                    <div className="px-1 space-y-0.5 text-gray-800 text-[10px] leading-relaxed">
+                      <div className="font-bold text-black text-sm">{activeReceiptPreview.customerName}</div>
+                      {activeReceiptPreview.customerPhone && <div className="font-semibold">{activeReceiptPreview.customerPhone}</div>}
+                      {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1 leading-normal">{activeReceiptPreview.customerAddress}</div>}
+                    </div>
+                  </div>
+
+                  {/* Table Section */}
+                  <div className="mb-6">
+                    <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-3 py-1.5 font-bold text-[10px] tracking-wider rounded-sm">
+                      <div className="col-span-2 text-center">Qty</div>
+                      <div className="col-span-7">Description</div>
+                      <div className="col-span-3 text-right">Amount</div>
+                    </div>
+                    
+                    <div className="divide-y divide-gray-150 px-1">
+                      {activeReceiptPreview.items?.map((it, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 py-2 text-[10px]">
+                          <div className="col-span-2 text-center text-gray-600">{it.qty}</div>
+                          <div className="col-span-7 font-medium text-gray-800 truncate">{it.description}</div>
+                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </div>
+                      ))}
+                      
+                      {activeReceiptPreview.includeShipping && (
+                        <div className="grid grid-cols-12 gap-2 py-2 text-[10px]">
+                          <div className="col-span-2 text-center text-gray-600">1</div>
+                          <div className="col-span-7 font-medium text-gray-800">Shipping Charges</div>
+                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="border-t border-gray-300 pt-3 space-y-1.5" style={{ borderTop: '1px solid #d1d5db' }}>
+                    <div className="flex justify-between items-center text-[10px] text-gray-600">
+                      <span>Including Tax ({activeReceiptPreview.taxPercent}%)</span>
+                      <span className="font-mono font-semibold">₹{Number(activeReceiptPreview.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm font-black text-black pt-1" style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
+                      <span>Total Paid</span>
+                      <span className="font-mono font-black text-lg">₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+
+                    {/* Pending Balance Row */}
+                    {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
+                      <div className="flex justify-between items-center text-[10px] text-red-650 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5">
+                        <span>Balance Due before Delivery</span>
+                        <span className="font-mono font-bold text-red-650">₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {activeReceiptPreview.footerNote && (
+                    <div className="mt-8 text-center text-[9px] text-gray-800 font-medium leading-normal px-2">
+                      {activeReceiptPreview.footerNote}
+                    </div>
+                  )}
+                </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setActiveReceiptPreview(null)} className="px-6 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold transition-colors text-sm cursor-pointer">Close</button>
+                <button onClick={() => window.print()} className="px-6 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-650 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                  Print / Save PDF
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 🧾 ACTUAL PRINTABLE DOM ELEMENT (For media print - hidden on screen) */}
+      {activeReceiptPreview && (
+        <div className="printable-receipt-wrapper hidden print:block bg-white text-black p-8 font-sans relative overflow-hidden" style={{ color: '#000000', backgroundColor: '#ffffff', minHeight: '297mm', width: '210mm' }}>
+          {/* Faint Premium Brand Watermark */}
+          <div className="absolute pointer-events-none select-none z-0 text-center" style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%) rotate(-25deg)',
+            fontSize: '70px',
+            fontWeight: '900',
+            letterSpacing: '0.25em',
+            background: 'linear-gradient(135deg, rgba(43, 149, 201, 0.07) 0%, rgba(67, 56, 202, 0.05) 50%, rgba(99, 102, 241, 0.04) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'rgba(43, 149, 201, 0.05)',
+            width: '90%',
+            textAlign: 'center',
+            lineHeight: '1.2',
+            fontFamily: '"Outfit", "Montserrat", "Inter", system-ui, sans-serif',
+            textTransform: 'uppercase',
+            wordBreak: 'break-word'
+          }}>
+            {activeReceiptPreview.companyName || 'Garage Kings'}
+          </div>
+
+          <div className="relative z-10 flex flex-col justify-between h-full w-full" style={{ minHeight: '265mm' }}>
+            {/* Header */}
+          <div className="flex justify-between items-start gap-4 mb-8" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <h1 className="text-3xl font-black leading-tight tracking-tight" style={{ fontSize: '28px', fontWeight: '900', fontFamily: 'system-ui, sans-serif', color: '#000000', margin: 0 }}>{activeReceiptPreview.companyName || 'Garage Kings India'}</h1>
+              <p className="text-gray-600 text-sm" style={{ fontSize: '14px', margin: '6px 0 0 0', color: '#4b5563' }}>{activeReceiptPreview.companyLocation || 'Delhi'}</p>
+            </div>
+            <div className="text-right" style={{ textAlign: 'right' }}>
+              <h2 className="text-3xl font-black text-gray-800 tracking-tight leading-none mb-1" style={{ fontSize: '28px', fontWeight: '900', margin: '0 0 4px 0', color: '#1f2937' }}>Receipt</h2>
+              <p className="text-sm text-gray-600 font-semibold" style={{ fontSize: '12px', margin: 0, color: '#4b5563' }}>Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</p>
+              <p className="text-xs text-gray-500 font-medium mt-1" style={{ fontSize: '11px', margin: '4px 0 0 0', color: '#6b7280' }}>Date &nbsp;{activeReceiptPreview.dateString}</p>
+            </div>
+          </div>
+
+          {/* "To" Section */}
+          <div className="mb-8" style={{ marginTop: '30px', marginBottom: '30px' }}>
+            <div className="bg-[#2b95c9] text-white px-4 py-1.5 font-bold text-xs tracking-wider mb-3 rounded-sm print-bg-blue print-text-white" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '6px 12px', letterSpacing: '0.05em' }}>To</div>
+            <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
+              <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{activeReceiptPreview.customerName}</div>
+              {activeReceiptPreview.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{activeReceiptPreview.customerPhone}</div>}
+              {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{activeReceiptPreview.customerAddress}</div>}
+            </div>
+          </div>
+
+          {/* Table Section */}
+          <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
+            <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm print-bg-blue print-text-white" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px' }}>
+              <div className="col-span-2 text-center" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center' }}>Qty</div>
+              <div className="col-span-7" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left' }}>Description</div>
+              <div className="col-span-3 text-right" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right' }}>Amount</div>
+            </div>
+            
+            <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+              {activeReceiptPreview.items?.map((it, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                  <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>{it.qty}</div>
+                  <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>{it.description}</div>
+                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                </div>
+              ))}
+              
+              {activeReceiptPreview.includeShipping && (
+                <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                  <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>1</div>
+                  <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>Shipping Charges</div>
+                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Totals Section */}
+          <div style={{ marginTop: '40px' }}>
+            <div className="pt-4 space-y-2 text-right flex flex-col items-end" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingTop: '16px' }}>
+              <div className="flex justify-between items-center text-xs text-gray-600 w-72" style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#4b5563' }}>
+                <span>Including Tax ({activeReceiptPreview.taxPercent}%)</span>
+                <span className="font-mono font-semibold" style={{ fontFamily: 'monospace', fontWeight: '600' }}>₹{Number(activeReceiptPreview.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm font-black text-black pt-2 w-72" style={{ borderTop: '1px solid #d1d5db', marginTop: '6px', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#000000', paddingTop: '8px' }}>
+                <span>Total Paid</span>
+                <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
+                <div className="flex justify-between items-center text-xs text-red-600 font-bold pt-2 w-72" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#dc2626', paddingTop: '6px' }}>
+                  <span>Balance Due before Delivery</span>
+                  <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer refund policy statement */}
+            {activeReceiptPreview.footerNote && (
+              <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '80px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
+                {activeReceiptPreview.footerNote}
+              </div>
+            )}
+          </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

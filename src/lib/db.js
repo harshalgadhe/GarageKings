@@ -12,7 +12,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-export const isFirebaseConfigured = !!firebaseConfig.apiKey;
+const requiredKeys = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID'
+];
+
+export const isFirebaseConfigured = requiredKeys.every(key => !!import.meta.env[key]);
 
 let app, db, storage, auth;
 
@@ -23,7 +29,7 @@ if (isFirebaseConfigured) {
     storage = getStorage(app);
     auth = getAuth(app);
   } catch (error) {
-    console.error("Firebase init error", error);
+    console.error("Firebase init error:", error);
   }
 }
 
@@ -31,7 +37,11 @@ export { auth };
 
 function checkFirebase() {
   if (!isFirebaseConfigured) {
-    throw new Error("Missing Firebase Keys! Please add your Firebase configuration to the .env file.");
+    const missing = requiredKeys.filter(key => !import.meta.env[key]);
+    throw new Error(`Firebase not configured! Missing: ${missing.join(', ')}. If you are on a different machine, make sure to copy your .env file.`);
+  }
+  if (!db) {
+    throw new Error("Firebase initialized but Firestore is unavailable. Check your console for errors.");
   }
 }
 
@@ -277,4 +287,32 @@ export function fileToBase64(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = error => reject(error);
   });
+}
+
+// Receipt Management Functions
+export async function getReceipts() {
+  checkFirebase();
+  try {
+    const col = collection(db, 'receipts');
+    const snap = await getDocs(col);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } catch (e) {
+    console.error('Error fetching receipts:', e);
+    return [];
+  }
+}
+
+export async function addReceipt(receipt) {
+  checkFirebase();
+  const docRef = await addDoc(collection(db, 'receipts'), {
+    ...receipt,
+    createdAt: new Date().toISOString()
+  });
+  return { id: docRef.id, ...receipt };
+}
+
+export async function deleteReceipt(id) {
+  checkFirebase();
+  await deleteDoc(doc(db, 'receipts', id));
 }
