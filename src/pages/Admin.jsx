@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, deleteReceipt, auth } from '../lib/db'
@@ -1636,7 +1637,7 @@ export default function Admin() {
       </AnimatePresence>
 
       {/* 🧾 ACTUAL PRINTABLE DOM ELEMENT (For media print - hidden on screen) */}
-      {activeReceiptPreview && (
+      {activeReceiptPreview && createPortal(
         <div className="printable-receipt-wrapper hidden print:block bg-white text-black p-8 font-sans relative overflow-hidden" style={{ color: '#000000', backgroundColor: '#ffffff', minHeight: '297mm', width: '210mm' }}>
           {/* Faint Premium Brand Watermark */}
           <div className="absolute pointer-events-none select-none z-0 text-center" style={{
@@ -1646,10 +1647,7 @@ export default function Admin() {
             fontSize: '70px',
             fontWeight: '900',
             letterSpacing: '0.25em',
-            background: 'linear-gradient(135deg, rgba(43, 149, 201, 0.07) 0%, rgba(67, 56, 202, 0.05) 50%, rgba(99, 102, 241, 0.04) 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            color: 'rgba(43, 149, 201, 0.05)',
+            color: 'rgba(43, 149, 201, 0.085)', // Solid light brand-tinted color for guaranteed print rendering without background-graphics enabled!
             width: '90%',
             textAlign: 'center',
             lineHeight: '1.2',
@@ -1738,7 +1736,8 @@ export default function Admin() {
             )}
           </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
