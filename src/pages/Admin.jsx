@@ -237,6 +237,8 @@ export default function Admin() {
     companyLocation: 'Delhi',
     customerName: '',
     customerPhone: '',
+    customerEmail: '',
+    customerInsta: '',
     customerAddress: '',
     formatType: 'standard', // 'standard', 'prebooking', 'auction', 'custom'
     items: [{ qty: 1, description: '', amount: '' }],
@@ -554,6 +556,8 @@ export default function Admin() {
       companyLocation: receipt.companyLocation || 'Delhi',
       customerName: receipt.customerName || '',
       customerPhone: receipt.customerPhone || '',
+      customerEmail: receipt.customerEmail || '',
+      customerInsta: receipt.customerInsta || '',
       customerAddress: receipt.customerAddress || '',
       formatType: receipt.formatType || 'standard',
       items: receipt.items && receipt.items.length > 0 ? receipt.items.map(it => ({ qty: it.qty, description: it.description, amount: String(it.amount) })) : [{ qty: 1, description: '', amount: '' }],
@@ -591,6 +595,8 @@ export default function Admin() {
         companyLocation: companyLocation.trim(),
         customerName: receiptForm.customerName.trim(),
         customerPhone: receiptForm.customerPhone.trim(),
+        customerEmail: receiptForm.customerEmail ? receiptForm.customerEmail.trim() : '',
+        customerInsta: receiptForm.customerInsta ? receiptForm.customerInsta.trim() : '',
         customerAddress: receiptForm.customerAddress.trim(),
         formatType,
         items: items.map(it => ({ qty: Number(it.qty), description: it.description.trim(), amount: Number(it.amount) })),
@@ -1746,9 +1752,17 @@ export default function Admin() {
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Phone</label>
                             <input type="text" placeholder="e.g. 9819169632" value={receiptForm.customerPhone} onChange={e => setReceiptForm(prev => ({ ...prev, customerPhone: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Email ID (Optional)</label>
+                            <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Instagram Handle (Optional)</label>
+                            <input type="text" placeholder="e.g. @diecast_collector" value={receiptForm.customerInsta} onChange={e => setReceiptForm(prev => ({ ...prev, customerInsta: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          </div>
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Address</label>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Address (Optional)</label>
                           <textarea rows={3} placeholder="Full shipping address..." value={receiptForm.customerAddress} onChange={e => setReceiptForm(prev => ({ ...prev, customerAddress: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                         </div>
                       </div>
@@ -1972,6 +1986,8 @@ export default function Admin() {
                                 <>
                                   <div className="font-bold text-black text-[11px]">{receiptForm.customerName}</div>
                                   {receiptForm.customerPhone && <div className="font-semibold">{receiptForm.customerPhone}</div>}
+                                  {receiptForm.customerEmail && <div className="font-medium text-gray-600">{receiptForm.customerEmail}</div>}
+                                  {receiptForm.customerInsta && <div className="font-medium text-blue-600">{receiptForm.customerInsta.startsWith('@') ? receiptForm.customerInsta : `@${receiptForm.customerInsta}`}</div>}
                                   {receiptForm.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-0.5">{receiptForm.customerAddress}</div>}
                                 </>
                               ) : (
@@ -2068,7 +2084,7 @@ export default function Admin() {
               <div className="flex gap-3">
                 <input 
                   type="text" 
-                  placeholder="Search customer, phone, or RT#..." 
+                  placeholder="Search customer, phone, email, @insta, or RT#..." 
                   value={receiptSearch} 
                   onChange={e => { setReceiptSearch(e.target.value); setReceiptPage(1); }} 
                   className="bg-black/50 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 w-full md:w-80" 
@@ -2087,7 +2103,9 @@ export default function Admin() {
                 const search = receiptSearch.toLowerCase();
                 return r.customerName?.toLowerCase().includes(search) || 
                        r.customerPhone?.toLowerCase().includes(search) || 
-                       r.receiptNumber?.toLowerCase().includes(search);
+                       r.receiptNumber?.toLowerCase().includes(search) ||
+                       r.customerEmail?.toLowerCase().includes(search) ||
+                       r.customerInsta?.toLowerCase().includes(search);
               });
               const totalReceiptPages = Math.ceil(filteredReceipts.length / RECEIPTS_PER_PAGE) || 1;
               const paginatedReceipts = filteredReceipts.slice((receiptPage - 1) * RECEIPTS_PER_PAGE, receiptPage * RECEIPTS_PER_PAGE);
@@ -2108,7 +2126,11 @@ export default function Admin() {
                         </div>
                         <div className="col-span-4">
                           <div className="font-bold text-sm text-white">{receipt.customerName}</div>
-                          <div className="text-xs text-white/50 truncate mt-0.5">{receipt.customerPhone || 'No Phone'}</div>
+                          <div className="flex flex-wrap gap-2 text-xs text-white/50 mt-0.5">
+                            {receipt.customerPhone && <span>{receipt.customerPhone}</span>}
+                            {receipt.customerEmail && <span className="text-blue-300 font-mono text-[11px]">{receipt.customerEmail}</span>}
+                            {receipt.customerInsta && <span className="text-purple-300 font-mono text-[11px]">{receipt.customerInsta.startsWith('@') ? receipt.customerInsta : `@${receipt.customerInsta}`}</span>}
+                          </div>
                           <div className="text-[10px] text-white/35 mt-1 truncate">
                             {receipt.items?.map(it => `${it.qty}x ${it.description}`).join(', ')}
                           </div>
@@ -2229,6 +2251,8 @@ export default function Admin() {
                       <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
                         <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{activeReceiptPreview.customerName}</div>
                         {activeReceiptPreview.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{activeReceiptPreview.customerPhone}</div>}
+                        {activeReceiptPreview.customerEmail && <div className="font-medium text-gray-600" style={{ fontWeight: '500', color: '#4b5563' }}>{activeReceiptPreview.customerEmail}</div>}
+                        {activeReceiptPreview.customerInsta && <div className="font-medium text-blue-600" style={{ fontWeight: '500', color: '#2563eb' }}>{activeReceiptPreview.customerInsta.startsWith('@') ? activeReceiptPreview.customerInsta : `@${activeReceiptPreview.customerInsta}`}</div>}
                         {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{activeReceiptPreview.customerAddress}</div>}
                       </div>
                     </div>
@@ -2347,6 +2371,8 @@ export default function Admin() {
             <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
               <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{activeReceiptPreview.customerName}</div>
               {activeReceiptPreview.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{activeReceiptPreview.customerPhone}</div>}
+              {activeReceiptPreview.customerEmail && <div className="font-medium text-gray-600" style={{ fontWeight: '500', color: '#4b5563' }}>{activeReceiptPreview.customerEmail}</div>}
+              {activeReceiptPreview.customerInsta && <div className="font-medium text-blue-600" style={{ fontWeight: '500', color: '#2563eb' }}>{activeReceiptPreview.customerInsta.startsWith('@') ? activeReceiptPreview.customerInsta : `@${activeReceiptPreview.customerInsta}`}</div>}
               {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{activeReceiptPreview.customerAddress}</div>}
             </div>
           </div>
