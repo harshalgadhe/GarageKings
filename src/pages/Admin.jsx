@@ -734,16 +734,6 @@ export default function Admin() {
             </button>
             <button 
               onClick={() => {
-                setAuctionForm({ title: '', brand: '', carBrand: '', scale: '1:64', grade: '', description: '', image: '', currency: '₹', startingPrice: '', minBidIncrement: '', endDate: '', endTime: '20:00' })
-                setEditingAuctionId(null)
-                setIsAddingAuction(true)
-              }}
-              className={`px-6 py-2.5 rounded-full bg-purple-500 text-white text-sm font-bold flex items-center gap-2 hover:bg-purple-400 transition-colors ${adminTab !== 'auctions' ? 'hidden' : ''}`}
-            >
-              <Plus size={16} /> New Auction
-            </button>
-            <button 
-              onClick={() => {
                 setEditingReceiptId(null);
                 setReceiptForm({
                   receiptNumber: suggestNextReceiptNumber(receipts),
@@ -778,12 +768,12 @@ export default function Admin() {
 
         {/* Tab Switcher */}
         <div className="flex gap-2 mb-8 border-b border-white/8 pb-0 overflow-x-auto">
-          {['dashboard', 'inventory', 'auctions', 'receipts'].map(t => (
+          {['dashboard', 'inventory', 'receipts'].map(t => (
             <button key={t} onClick={() => setAdminTab(t)}
               className={`px-5 py-3 text-sm font-black uppercase tracking-wider rounded-t-xl transition-colors whitespace-nowrap ${
                 adminTab === t ? 'bg-white/8 border border-white/10 border-b-0 text-white' : 'text-white/30 hover:text-white/60'
               }`}>
-              {t === 'dashboard' ? '📊 Dashboard' : t === 'inventory' ? '📦 Inventory' : t === 'auctions' ? '🏷️ Auctions' : '🧾 Receipts'}
+              {t === 'dashboard' ? '📊 Dashboard' : t === 'inventory' ? '📦 Inventory' : '🧾 Receipts'}
             </button>
           ))}
         </div>
@@ -1172,16 +1162,6 @@ export default function Admin() {
                         <div className="h-full bg-amber-500 rounded-full" style={{ width: `${dashboardStats.totalReceiptsCount > 0 ? (dashboardStats.poCount / dashboardStats.totalReceiptsCount) * 100 : 0}%` }}></div>
                       </div>
                     </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-purple-300">Auction Wins ({dashboardStats.auctionCount})</span>
-                        <span className="font-mono text-white/50">{dashboardStats.totalReceiptsCount > 0 ? Math.round((dashboardStats.auctionCount / dashboardStats.totalReceiptsCount) * 100) : 0}%</span>
-                      </div>
-                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-purple-500 rounded-full" style={{ width: `${dashboardStats.totalReceiptsCount > 0 ? (dashboardStats.auctionCount / dashboardStats.totalReceiptsCount) * 100 : 0}%` }}></div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1198,14 +1178,6 @@ export default function Admin() {
                     <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
                       <span className="text-xs text-white/60">Average Receipt Value</span>
                       <span className="font-mono font-bold text-gk-yellow">₹{dashboardStats.avgReceiptValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
-                      <span className="text-xs text-white/60">Inventory Diecasts</span>
-                      <span className="font-mono font-bold text-white">{dashboardStats.totalCarsCount} items (₹{dashboardStats.totalInventoryValue.toLocaleString('en-IN')})</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
-                      <span className="text-xs text-white/60">Active Auctions</span>
-                      <span className="font-mono font-bold text-purple-400">{dashboardStats.activeAuctionsCount} Running</span>
                     </div>
                   </div>
                 </div>
@@ -1224,18 +1196,6 @@ export default function Admin() {
                       className="p-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-xs hover:bg-white/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       Receipts History
-                    </button>
-                    <button
-                      onClick={() => { setAdminTab('inventory'); setIsAdding(true); }}
-                      className="p-3 bg-gk-yellow/10 border border-gk-yellow/30 rounded-xl text-gk-yellow font-bold text-xs hover:bg-gk-yellow/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Plus size={14} /> Add Stock
-                    </button>
-                    <button
-                      onClick={() => { setAdminTab('auctions'); setIsAddingAuction(true); }}
-                      className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-300 font-bold text-xs hover:bg-purple-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Plus size={14} /> New Auction
                     </button>
                   </div>
                 </div>
