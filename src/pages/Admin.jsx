@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut } from 'lucide-react'
-import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, deleteReceipt, auth } from '../lib/db'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers } from 'lucide-react'
+import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 
@@ -39,7 +39,6 @@ export default function Admin() {
   const [bidsLoading, setBidsLoading] = useState(false)
 
   // Auction state
-  const [adminTab, setAdminTab] = useState('inventory')
   const [auctions, setAuctions] = useState([])
   const [isAddingAuction, setIsAddingAuction] = useState(false)
   const [editingAuctionId, setEditingAuctionId] = useState(null)
@@ -47,10 +46,190 @@ export default function Admin() {
   const [auctionBidsModal, setAuctionBidsModal] = useState(null)
   const [auctionBidsLoading, setAuctionBidsLoading] = useState(false)
 
-  // Receipt state
+  // Navigation & Receipt state
+  const [adminTab, setAdminTab] = useState('dashboard') // 'dashboard', 'inventory', 'auctions', 'receipts'
   const [receipts, setReceipts] = useState([])
   const [isAddingReceipt, setIsAddingReceipt] = useState(false)
+  const [editingReceiptId, setEditingReceiptId] = useState(null)
   const [receiptSearch, setReceiptSearch] = useState('')
+  const [receiptPage, setReceiptPage] = useState(1)
+  const RECEIPTS_PER_PAGE = 20
+
+  // Interactive Chart state
+  const [chartTimeframe, setChartTimeframe] = useState('daily') // 'daily', 'weekly', 'monthly'
+  const [chartMetric, setChartMetric] = useState('all') // 'all', 'stock', 'po'
+  const [hoveredPointIndex, setHoveredPointIndex] = useState(null)
+
+  // Interactive Revenue Chart Data Generation
+  const chartData = useMemo(() => {
+    const now = new Date();
+    let buckets = [];
+
+    if (chartTimeframe === 'daily') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const dayStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+        const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+        const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+
+        buckets.push({
+          label: i === 0 ? 'Today' : dayStr,
+          startDate: startOfDay,
+          endDate: endOfDay,
+          stock: 0,
+          po: 0,
+          total: 0
+        });
+      }
+    } else if (chartTimeframe === 'weekly') {
+      for (let i = 7; i >= 0; i--) {
+        const endW = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        const startW = new Date(endW.getTime() - 6 * 24 * 60 * 60 * 1000);
+        startW.setHours(0, 0, 0, 0);
+        endW.setHours(23, 59, 59, 999);
+
+        const label = i === 0 ? 'This Wk' : `${startW.getDate()} ${startW.toLocaleDateString('en-IN', { month: 'short' })}`;
+
+        buckets.push({
+          label,
+          startDate: startW,
+          endDate: endW,
+          stock: 0,
+          po: 0,
+          total: 0
+        });
+      }
+    } else {
+      for (let i = 11; i >= 0; i--) {
+        const startM = new Date(now.getFullYear(), now.getMonth() - i, 1, 0, 0, 0);
+        const endM = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+
+        const label = startM.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+
+        buckets.push({
+          label,
+          startDate: startM,
+          endDate: endM,
+          stock: 0,
+          po: 0,
+          total: 0
+        });
+      }
+    }
+
+    receipts.forEach(r => {
+      const amt = Number(r.totalAmount) || 0;
+      const rDate = r.createdAt ? new Date(r.createdAt) : new Date();
+
+      const matchedBucket = buckets.find(b => rDate >= b.startDate && rDate <= b.endDate);
+      if (matchedBucket) {
+        if (r.formatType === 'prebooking') {
+          matchedBucket.po += amt;
+        } else {
+          matchedBucket.stock += amt;
+        }
+        matchedBucket.total += amt;
+      }
+    });
+
+    return buckets;
+  }, [receipts, chartTimeframe]);
+
+  // Dashboard Analytics Calculations
+  const dashboardStats = useMemo(() => {
+    let stockRevenue = 0;
+    let poRevenue = 0;
+    let poPendingAmount = 0;
+    
+    let standardCount = 0;
+    let poCount = 0;
+    let auctionCount = 0;
+    let customCount = 0;
+
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    let thisMonthRevenue = 0;
+    let lastMonthRevenue = 0;
+    let thisWeekRevenue = 0;
+    let lastWeekRevenue = 0;
+
+    receipts.forEach(r => {
+      const totalPaid = Number(r.totalAmount) || 0;
+      const pending = Number(r.pendingBalance) || 0;
+      const rDate = r.createdAt ? new Date(r.createdAt) : new Date();
+
+      if (r.formatType === 'prebooking') {
+        poRevenue += totalPaid;
+        poPendingAmount += pending;
+        poCount++;
+      } else {
+        stockRevenue += totalPaid;
+        if (r.formatType === 'auction') auctionCount++;
+        else if (r.formatType === 'custom') customCount++;
+        else standardCount++;
+      }
+
+      if (rDate >= startOfThisMonth) {
+        thisMonthRevenue += totalPaid;
+      } else if (rDate >= startOfLastMonth && rDate <= endOfLastMonth) {
+        lastMonthRevenue += totalPaid;
+      }
+
+      if (rDate >= sevenDaysAgo) {
+        thisWeekRevenue += totalPaid;
+      } else if (rDate >= fourteenDaysAgo && rDate < sevenDaysAgo) {
+        lastWeekRevenue += totalPaid;
+      }
+    });
+
+    const totalRevenue = stockRevenue + poRevenue;
+    const totalReceiptsCount = receipts.length;
+    const avgReceiptValue = totalReceiptsCount > 0 ? totalRevenue / totalReceiptsCount : 0;
+
+    const monthGrowthPct = lastMonthRevenue > 0 
+      ? (((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100).toFixed(1)
+      : thisMonthRevenue > 0 ? '100' : '0';
+
+    const weekGrowthPct = lastWeekRevenue > 0
+      ? (((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100).toFixed(1)
+      : thisWeekRevenue > 0 ? '100' : '0';
+
+    const totalCarsCount = cars.length;
+    const totalInventoryValue = cars.reduce((acc, car) => acc + (Number(car.price) || 0), 0);
+    const activeAuctionsCount = auctions.filter(a => {
+      if (!a.endDate) return true;
+      const end = new Date(`${a.endDate}T${a.endTime || '23:59'}`);
+      return end > now;
+    }).length;
+
+    return {
+      stockRevenue,
+      poRevenue,
+      poPendingAmount,
+      totalRevenue,
+      totalReceiptsCount,
+      avgReceiptValue,
+      thisMonthRevenue,
+      lastMonthRevenue,
+      monthGrowthPct,
+      thisWeekRevenue,
+      lastWeekRevenue,
+      weekGrowthPct,
+      standardCount,
+      poCount,
+      auctionCount,
+      customCount,
+      totalCarsCount,
+      totalInventoryValue,
+      activeAuctionsCount
+    };
+  }, [receipts, cars, auctions]);
   const [receiptForm, setReceiptForm] = useState({
     receiptNumber: '',
     dateString: '',
@@ -346,10 +525,12 @@ export default function Admin() {
 
   const handleFormatTypeChange = (type) => {
     let footerNote = '';
+    let includeShipping = receiptForm.includeShipping;
     if (type === 'standard') {
       footerNote = 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.';
     } else if (type === 'prebooking') {
-      footerNote = 'This receipt is for the prebooking of the item. Rest of the payment is due when the stock arrives. Prebookings are non-refundable unless unfulfilled by Garage Kings India.';
+      footerNote = 'This receipt is for the Pre-Order (PO) of the item. Rest of the payment is due when the stock arrives. Pre-Orders are non-refundable unless unfulfilled by Garage Kings India.';
+      includeShipping = false;
     } else if (type === 'auction') {
       footerNote = 'This receipt confirms the successful win of the auction item. Thank you for bidding! In the event that the order cannot be fulfilled from our end, a full refund will be issued.';
     } else {
@@ -359,8 +540,30 @@ export default function Admin() {
     setReceiptForm(prev => ({
       ...prev,
       formatType: type,
+      includeShipping,
       footerNote
     }));
+  }
+
+  const handleEditReceipt = (receipt) => {
+    setEditingReceiptId(receipt.id);
+    setReceiptForm({
+      receiptNumber: receipt.receiptNumber || '',
+      dateString: receipt.dateString || '',
+      companyName: receipt.companyName || 'Garage Kings India',
+      companyLocation: receipt.companyLocation || 'Delhi',
+      customerName: receipt.customerName || '',
+      customerPhone: receipt.customerPhone || '',
+      customerAddress: receipt.customerAddress || '',
+      formatType: receipt.formatType || 'standard',
+      items: receipt.items && receipt.items.length > 0 ? receipt.items.map(it => ({ qty: it.qty, description: it.description, amount: String(it.amount) })) : [{ qty: 1, description: '', amount: '' }],
+      shippingCharges: receipt.shippingCharges !== undefined ? receipt.shippingCharges : 150,
+      includeShipping: receipt.includeShipping !== undefined ? receipt.includeShipping : true,
+      taxPercent: receipt.taxPercent !== undefined ? receipt.taxPercent : 0,
+      footerNote: receipt.footerNote !== undefined ? receipt.footerNote : '',
+      pendingBalance: receipt.pendingBalance !== undefined && receipt.pendingBalance !== 0 ? String(receipt.pendingBalance) : ''
+    });
+    setIsAddingReceipt(true);
   }
 
   const handleSaveReceipt = async () => {
@@ -400,12 +603,18 @@ export default function Admin() {
         footerNote: footerNote.trim()
       };
 
-      await addReceipt(receiptData);
+      if (editingReceiptId) {
+        await updateReceipt(editingReceiptId, receiptData);
+        alert("Receipt updated successfully!");
+      } else {
+        await addReceipt(receiptData);
+        alert("Receipt saved successfully!");
+      }
       
       const refreshed = await getReceipts();
       setReceipts(refreshed);
       setIsAddingReceipt(false);
-      alert("Receipt saved successfully!");
+      setEditingReceiptId(null);
     } catch (e) {
       alert("Failed to save receipt: " + e.message);
     }
@@ -426,6 +635,7 @@ export default function Admin() {
     setActiveReceiptPreview(receipt);
     setTimeout(() => {
       window.print();
+      setActiveReceiptPreview(null);
     }, 250);
   }
 
@@ -534,6 +744,7 @@ export default function Admin() {
             </button>
             <button 
               onClick={() => {
+                setEditingReceiptId(null);
                 setReceiptForm({
                   receiptNumber: suggestNextReceiptNumber(receipts),
                   dateString: formatReceiptDate(),
@@ -566,16 +777,472 @@ export default function Admin() {
         </header>
 
         {/* Tab Switcher */}
-        <div className="flex gap-2 mb-8 border-b border-white/8 pb-0">
-          {['inventory', 'auctions', 'receipts'].map(t => (
+        <div className="flex gap-2 mb-8 border-b border-white/8 pb-0 overflow-x-auto">
+          {['dashboard', 'inventory', 'auctions', 'receipts'].map(t => (
             <button key={t} onClick={() => setAdminTab(t)}
-              className={`px-5 py-3 text-sm font-black uppercase tracking-wider rounded-t-xl transition-colors ${
+              className={`px-5 py-3 text-sm font-black uppercase tracking-wider rounded-t-xl transition-colors whitespace-nowrap ${
                 adminTab === t ? 'bg-white/8 border border-white/10 border-b-0 text-white' : 'text-white/30 hover:text-white/60'
               }`}>
-              {t === 'inventory' ? 'Inventory' : t === 'auctions' ? '🏷️ Auctions' : '🧾 Receipts'}
+              {t === 'dashboard' ? '📊 Dashboard' : t === 'inventory' ? '📦 Inventory' : t === 'auctions' ? '🏷️ Auctions' : '🧾 Receipts'}
             </button>
           ))}
         </div>
+
+        {/* ── DASHBOARD TAB PANEL ───────────────────────────── */}
+        {adminTab === 'dashboard' && (
+          <div className="space-y-8 no-print animate-fade-in mb-12">
+            {/* Top Row: Key Metrics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* Stock Revenue */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 relative overflow-hidden group hover:border-emerald-500/40 transition-all">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/50">Stock Revenue</span>
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <ShoppingBag size={18} />
+                  </div>
+                </div>
+                <div className="text-2xl font-black font-mono text-white tracking-tight">
+                  ₹{dashboardStats.stockRevenue.toLocaleString('en-IN')}
+                </div>
+                <p className="text-[11px] text-white/40 mt-1 font-medium">Non-PO / Stock & Auction Sales</p>
+              </div>
+
+              {/* PO Revenue */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 relative overflow-hidden group hover:border-amber-500/40 transition-all">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/50">PO Revenue</span>
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <Clock size={18} />
+                  </div>
+                </div>
+                <div className="text-2xl font-black font-mono text-amber-350 tracking-tight">
+                  ₹{dashboardStats.poRevenue.toLocaleString('en-IN')}
+                </div>
+                <p className="text-[11px] text-white/40 mt-1 font-medium">Pre-Orders Collected</p>
+              </div>
+
+              {/* PO Pending Amount */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 relative overflow-hidden group hover:border-rose-500/40 transition-all">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/50">PO Pending Due</span>
+                  <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <TrendingUp size={18} />
+                  </div>
+                </div>
+                <div className="text-2xl font-black font-mono text-rose-400 tracking-tight">
+                  ₹{dashboardStats.poPendingAmount.toLocaleString('en-IN')}
+                </div>
+                <p className="text-[11px] text-white/40 mt-1 font-medium">Balance Due Before Delivery</p>
+              </div>
+
+              {/* Total Revenue (PO + Stock) */}
+              <div className="bg-gradient-to-br from-blue-600/20 via-blue-500/10 to-transparent border border-blue-500/30 rounded-2xl p-5 relative overflow-hidden group hover:border-blue-400/50 transition-all shadow-[0_0_30px_rgba(59,130,246,0.1)]">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-300">Total Revenue</span>
+                  <div className="p-2 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    <DollarSign size={18} />
+                  </div>
+                </div>
+                <div className="text-2xl font-black font-mono text-gk-yellow tracking-tight">
+                  ₹{dashboardStats.totalRevenue.toLocaleString('en-IN')}
+                </div>
+                <p className="text-[11px] text-blue-200/60 mt-1 font-medium">Combined Collected (PO + Stock)</p>
+              </div>
+            </div>
+
+            {/* ── INTERACTIVE REVENUE LINE GRAPH ──────────────────── */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-6">
+              {/* Header with Interactive Filter Controls */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-400 border border-blue-500/20">
+                    <TrendingUp size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                      Revenue Trend Line Graph
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono font-normal">
+                        {chartTimeframe === 'daily' ? 'Daily (Last 7 Days)' : chartTimeframe === 'weekly' ? 'Weekly (Last 8 Weeks)' : 'Monthly (Last 12 Months)'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-white/40 mt-0.5">Filter timeframes and compare revenue performance over time</p>
+                  </div>
+                </div>
+
+                {/* Filter Controllers */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Timeframe Filter Switcher */}
+                  <div className="flex p-1 bg-black/50 border border-white/10 rounded-xl">
+                    {[
+                      { id: 'daily', label: '7 Days' },
+                      { id: 'weekly', label: '8 Weeks' },
+                      { id: 'monthly', label: '12 Months' }
+                    ].map(tf => (
+                      <button
+                        key={tf.id}
+                        onClick={() => { setChartTimeframe(tf.id); setHoveredPointIndex(null); }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          chartTimeframe === tf.id
+                            ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                            : 'text-white/40 hover:text-white'
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Metric Filter Switcher */}
+                  <div className="flex p-1 bg-black/50 border border-white/10 rounded-xl">
+                    {[
+                      { id: 'all', label: 'All Revenue' },
+                      { id: 'stock', label: 'Stock Only' },
+                      { id: 'po', label: 'PO Only' }
+                    ].map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => { setChartMetric(m.id); setHoveredPointIndex(null); }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          chartMetric === m.id
+                            ? 'bg-white/15 text-white border border-white/20'
+                            : 'text-white/40 hover:text-white'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* SVG Line Graph Render */}
+              {(() => {
+                const svgWidth = 800;
+                const svgHeight = 260;
+                const paddingLeft = 60;
+                const paddingRight = 30;
+                const paddingTop = 25;
+                const paddingBottom = 40;
+
+                const chartW = svgWidth - paddingLeft - paddingRight;
+                const chartH = svgHeight - paddingTop - paddingBottom;
+
+                const getVal = (d) => chartMetric === 'stock' ? d.stock : chartMetric === 'po' ? d.po : d.total;
+                const maxVal = Math.max(...chartData.map(getVal), 100) * 1.15;
+
+                const points = chartData.map((d, i) => {
+                  const x = paddingLeft + (chartData.length > 1 ? (i / (chartData.length - 1)) * chartW : chartW / 2);
+                  const val = getVal(d);
+                  const y = svgHeight - paddingBottom - (val / maxVal) * chartH;
+                  return { x, y, val, data: d, index: i };
+                });
+
+                let linePath = '';
+                if (points.length > 0) {
+                  linePath = `M ${points[0].x},${points[0].y}`;
+                  for (let i = 0; i < points.length - 1; i++) {
+                    const p0 = points[i];
+                    const p1 = points[i + 1];
+                    const cp1x = p0.x + (p1.x - p0.x) / 2;
+                    const cp1y = p0.y;
+                    const cp2x = p0.x + (p1.x - p0.x) / 2;
+                    const cp2y = p1.y;
+                    linePath += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p1.x},${p1.y}`;
+                  }
+                }
+
+                const areaPath = points.length > 0 
+                  ? `${linePath} L ${points[points.length - 1].x},${svgHeight - paddingBottom} L ${points[0].x},${svgHeight - paddingBottom} Z`
+                  : '';
+
+                const strokeColor = chartMetric === 'stock' ? '#34d399' : chartMetric === 'po' ? '#fbbf24' : '#eab308';
+                const gradientId = `chartGradient_${chartMetric}`;
+
+                const yTicks = [0, 0.33, 0.66, 1].map(pct => {
+                  const val = maxVal * pct;
+                  const y = svgHeight - paddingBottom - pct * chartH;
+                  return { val, y };
+                });
+
+                const activePoint = hoveredPointIndex !== null ? points[hoveredPointIndex] : points[points.length - 1];
+
+                return (
+                  <div className="space-y-4">
+                    {/* Active Hover Point Callout */}
+                    {activePoint && (
+                      <div className="flex flex-wrap items-center justify-between p-3.5 bg-black/40 border border-white/10 rounded-xl gap-4">
+                        <div className="flex items-center gap-3">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: strokeColor }}></span>
+                          <span className="text-xs font-bold text-white font-mono">{activePoint.data.label}</span>
+                        </div>
+                        <div className="flex items-center gap-6 text-xs">
+                          <div>
+                            <span className="text-white/40 mr-1.5">Stock Sales:</span>
+                            <span className="font-mono font-bold text-emerald-400">₹{activePoint.data.stock.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div>
+                            <span className="text-white/40 mr-1.5">PO Revenue:</span>
+                            <span className="font-mono font-bold text-amber-400">₹{activePoint.data.po.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="pl-3 border-l border-white/10">
+                            <span className="text-white/40 mr-1.5">Selected Total:</span>
+                            <span className="font-mono font-black text-gk-yellow text-sm">₹{activePoint.data.total.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SVG Canvas */}
+                    <div className="relative w-full overflow-hidden">
+                      <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto overflow-visible select-none">
+                        <defs>
+                          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={strokeColor} stopOpacity="0.35" />
+                            <stop offset="100%" stopColor={strokeColor} stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+
+                        {/* Y-Axis Lines */}
+                        {yTicks.map((tick, idx) => (
+                          <g key={idx}>
+                            <line
+                              x1={paddingLeft}
+                              y1={tick.y}
+                              x2={svgWidth - paddingRight}
+                              y2={tick.y}
+                              stroke="rgba(255, 255, 255, 0.07)"
+                              strokeDasharray="4 4"
+                            />
+                            <text
+                              x={paddingLeft - 10}
+                              y={tick.y + 4}
+                              textAnchor="end"
+                              fill="rgba(255, 255, 255, 0.35)"
+                              fontSize="10"
+                              fontFamily="monospace"
+                            >
+                              ₹{tick.val >= 100000 ? `${(tick.val / 100000).toFixed(1)}L` : tick.val >= 1000 ? `${(tick.val / 1000).toFixed(0)}k` : tick.val.toFixed(0)}
+                            </text>
+                          </g>
+                        ))}
+
+                        {/* X-Axis Labels */}
+                        {points.map((pt, idx) => (
+                          <text
+                            key={idx}
+                            x={pt.x}
+                            y={svgHeight - 12}
+                            textAnchor="middle"
+                            fill={hoveredPointIndex === idx ? '#ffffff' : 'rgba(255, 255, 255, 0.4)'}
+                            fontSize="10"
+                            fontWeight={hoveredPointIndex === idx ? 'bold' : 'normal'}
+                          >
+                            {pt.data.label}
+                          </text>
+                        ))}
+
+                        {/* Area Gradient */}
+                        <path d={areaPath} fill={`url(#${gradientId})`} />
+
+                        {/* Line Path */}
+                        <path
+                          d={linePath}
+                          fill="none"
+                          stroke={strokeColor}
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+
+                        {/* Data Points */}
+                        {points.map((pt, idx) => (
+                          <g key={idx} className="cursor-pointer" onMouseEnter={() => setHoveredPointIndex(idx)}>
+                            {hoveredPointIndex === idx && (
+                              <line
+                                x1={pt.x}
+                                y1={paddingTop}
+                                x2={pt.x}
+                                y2={svgHeight - paddingBottom}
+                                stroke="rgba(255, 255, 255, 0.25)"
+                                strokeDasharray="3 3"
+                              />
+                            )}
+                            <circle
+                              cx={pt.x}
+                              cy={pt.y}
+                              r={hoveredPointIndex === idx ? 8 : 5}
+                              fill={strokeColor}
+                              fillOpacity={hoveredPointIndex === idx ? 0.4 : 0.2}
+                            />
+                            <circle
+                              cx={pt.x}
+                              cy={pt.y}
+                              r={hoveredPointIndex === idx ? 5 : 3.5}
+                              fill="#ffffff"
+                              stroke={strokeColor}
+                              strokeWidth="2.5"
+                            />
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Second Row: Time-Based Analytics & Operational Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Month & Week Revenue Analytics */}
+              <div className="lg:col-span-7 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-6">
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400 border border-blue-500/20">
+                      <BarChart3 size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white text-base">Revenue Trends & Time Breakdown</h3>
+                      <p className="text-xs text-white/40 mt-0.5">Comparative sales performance across time periods</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Monthly Comparison */}
+                  <div className="bg-black/30 border border-white/8 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-white/50">
+                      <span className="font-semibold uppercase tracking-wider">Month-over-Month</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        Number(dashboardStats.monthGrowthPct) >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {Number(dashboardStats.monthGrowthPct) >= 0 ? `+${dashboardStats.monthGrowthPct}%` : `${dashboardStats.monthGrowthPct}%`}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-xl font-black font-mono text-white">₹{dashboardStats.thisMonthRevenue.toLocaleString('en-IN')}</div>
+                      <div className="text-[11px] text-white/40 mt-0.5">This Month</div>
+                    </div>
+                    <div className="pt-2 border-t border-white/5 flex justify-between items-center text-xs text-white/50">
+                      <span>Last Month:</span>
+                      <span className="font-mono text-white/80 font-semibold">₹{dashboardStats.lastMonthRevenue.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+
+                  {/* Weekly Comparison */}
+                  <div className="bg-black/30 border border-white/8 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-white/50">
+                      <span className="font-semibold uppercase tracking-wider">Week-over-Week</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        Number(dashboardStats.weekGrowthPct) >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {Number(dashboardStats.weekGrowthPct) >= 0 ? `+${dashboardStats.weekGrowthPct}%` : `${dashboardStats.weekGrowthPct}%`}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-xl font-black font-mono text-white">₹{dashboardStats.thisWeekRevenue.toLocaleString('en-IN')}</div>
+                      <div className="text-[11px] text-white/40 mt-0.5">Last 7 Days</div>
+                    </div>
+                    <div className="pt-2 border-t border-white/5 flex justify-between items-center text-xs text-white/50">
+                      <span>Prior 7 Days:</span>
+                      <span className="font-mono text-white/80 font-semibold">₹{dashboardStats.lastWeekRevenue.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Format Distribution Progress Bars */}
+                <div className="space-y-3 pt-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-white/50">Receipt Format Distribution</div>
+                  <div className="space-y-2.5">
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-white/70">Standard Sales ({dashboardStats.standardCount})</span>
+                        <span className="font-mono text-white/50">{dashboardStats.totalReceiptsCount > 0 ? Math.round((dashboardStats.standardCount / dashboardStats.totalReceiptsCount) * 100) : 0}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${dashboardStats.totalReceiptsCount > 0 ? (dashboardStats.standardCount / dashboardStats.totalReceiptsCount) * 100 : 0}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-amber-350">Prebooking / PO ({dashboardStats.poCount})</span>
+                        <span className="font-mono text-white/50">{dashboardStats.totalReceiptsCount > 0 ? Math.round((dashboardStats.poCount / dashboardStats.totalReceiptsCount) * 100) : 0}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-amber-500 rounded-full" style={{ width: `${dashboardStats.totalReceiptsCount > 0 ? (dashboardStats.poCount / dashboardStats.totalReceiptsCount) * 100 : 0}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-purple-300">Auction Wins ({dashboardStats.auctionCount})</span>
+                        <span className="font-mono text-white/50">{dashboardStats.totalReceiptsCount > 0 ? Math.round((dashboardStats.auctionCount / dashboardStats.totalReceiptsCount) * 100) : 0}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-purple-500 rounded-full" style={{ width: `${dashboardStats.totalReceiptsCount > 0 ? (dashboardStats.auctionCount / dashboardStats.totalReceiptsCount) * 100 : 0}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Operational Metrics & Quick Actions */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+                  <h3 className="font-bold text-white text-base border-b border-white/10 pb-3">Operational Summary</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-xs text-white/60">Total Receipts Generated</span>
+                      <span className="font-mono font-bold text-white">{dashboardStats.totalReceiptsCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-xs text-white/60">Average Receipt Value</span>
+                      <span className="font-mono font-bold text-gk-yellow">₹{dashboardStats.avgReceiptValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-xs text-white/60">Inventory Diecasts</span>
+                      <span className="font-mono font-bold text-white">{dashboardStats.totalCarsCount} items (₹{dashboardStats.totalInventoryValue.toLocaleString('en-IN')})</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-xs text-white/60">Active Auctions</span>
+                      <span className="font-mono font-bold text-purple-400">{dashboardStats.activeAuctionsCount} Running</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-3">
+                  <h3 className="font-bold text-white text-sm uppercase tracking-wider text-white/50">Quick Actions</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => { setAdminTab('receipts'); setEditingReceiptId(null); setIsAddingReceipt(true); }}
+                      className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 font-bold text-xs hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Plus size={14} /> New Receipt
+                    </button>
+                    <button
+                      onClick={() => setAdminTab('receipts')}
+                      className="p-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-xs hover:bg-white/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      Receipts History
+                    </button>
+                    <button
+                      onClick={() => { setAdminTab('inventory'); setIsAdding(true); }}
+                      className="p-3 bg-gk-yellow/10 border border-gk-yellow/30 rounded-xl text-gk-yellow font-bold text-xs hover:bg-gk-yellow/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add Stock
+                    </button>
+                    <button
+                      onClick={() => { setAdminTab('auctions'); setIsAddingAuction(true); }}
+                      className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl text-purple-300 font-bold text-xs hover:bg-purple-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Plus size={14} /> New Auction
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {adminTab === 'inventory' && (
           <>
         <AnimatePresence>
@@ -1076,8 +1743,8 @@ export default function Admin() {
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-8">
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 md:p-8">
                   <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-white">Create New Receipt</h2>
-                    <button onClick={() => setIsAddingReceipt(false)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+                    <h2 className="text-xl font-bold text-white">{editingReceiptId ? `Edit Receipt (${receiptForm.receiptNumber})` : 'Create New Receipt'}</h2>
+                    <button onClick={() => { setIsAddingReceipt(false); setEditingReceiptId(null); }} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
                   </div>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1261,7 +1928,7 @@ export default function Admin() {
                           <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Receipt Format</label>
                           <select value={receiptForm.formatType} onChange={e => handleFormatTypeChange(e.target.value)} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none cursor-pointer outline-none">
                             <option value="standard" className="bg-[#111116] text-white">Standard Sale</option>
-                            <option value="prebooking" className="bg-[#111116] text-white">Prebooking</option>
+                            <option value="prebooking" className="bg-[#111116] text-white">Prebooking / Pre-Order (PO)</option>
                             <option value="auction" className="bg-[#111116] text-white">Auction Win</option>
                             <option value="custom" className="bg-[#111116] text-white">Custom Format</option>
                           </select>
@@ -1405,9 +2072,12 @@ export default function Admin() {
 
                             {/* Pending Balance Row */}
                             {receiptForm.formatType === 'prebooking' && receiptForm.pendingBalance && Number(receiptForm.pendingBalance) > 0 && (
-                              <div className="flex justify-between items-center text-[10px] text-red-600 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5">
-                                <span>Balance Due before Delivery</span>
-                                <span className="font-mono font-bold text-red-650">₹{Number(receiptForm.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <div className="flex justify-between items-start text-[10px] text-red-600 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5 gap-2">
+                                <div>
+                                  <div>Balance Due before Delivery</div>
+                                  <div className="text-[9px] text-red-500 font-normal">(Excluding shipping)</div>
+                                </div>
+                                <span className="font-mono font-bold text-red-650 whitespace-nowrap shrink-0">₹{Number(receiptForm.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                               </div>
                             )}
                           </div>
@@ -1440,7 +2110,7 @@ export default function Admin() {
                   type="text" 
                   placeholder="Search customer, phone, or RT#..." 
                   value={receiptSearch} 
-                  onChange={e => setReceiptSearch(e.target.value)} 
+                  onChange={e => { setReceiptSearch(e.target.value); setReceiptPage(1); }} 
                   className="bg-black/50 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 w-full md:w-80" 
                 />
               </div>
@@ -1452,55 +2122,94 @@ export default function Admin() {
                 <p className="text-4xl mb-4">🧾</p>
                 <p>No receipt history yet. Click "New Receipt" to create one.</p>
               </div>
-            ) : (
-              <div className="divide-y divide-white/5">
-                {receipts
-                  .filter(r => {
-                    const search = receiptSearch.toLowerCase();
-                    return r.customerName?.toLowerCase().includes(search) || 
-                           r.customerPhone?.toLowerCase().includes(search) || 
-                           r.receiptNumber?.toLowerCase().includes(search);
-                  })
-                  .map(receipt => (
-                    <div key={receipt.id} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/5 transition-colors group">
-                      <div className="col-span-2">
-                        <div className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</div>
-                        <div className="text-[9px] text-white/40 font-mono mt-0.5">{receipt.dateString?.split(' - ')[0]}</div>
-                      </div>
-                      <div className="col-span-5">
-                        <div className="font-bold text-sm text-white">{receipt.customerName}</div>
-                        <div className="text-xs text-white/50 truncate mt-0.5">{receipt.customerPhone || 'No Phone'}</div>
-                        <div className="text-[10px] text-white/35 mt-1 truncate">
-                          {receipt.items?.map(it => `${it.qty}x ${it.description}`).join(', ')}
+            ) : (() => {
+              const filteredReceipts = receipts.filter(r => {
+                const search = receiptSearch.toLowerCase();
+                return r.customerName?.toLowerCase().includes(search) || 
+                       r.customerPhone?.toLowerCase().includes(search) || 
+                       r.receiptNumber?.toLowerCase().includes(search);
+              });
+              const totalReceiptPages = Math.ceil(filteredReceipts.length / RECEIPTS_PER_PAGE) || 1;
+              const paginatedReceipts = filteredReceipts.slice((receiptPage - 1) * RECEIPTS_PER_PAGE, receiptPage * RECEIPTS_PER_PAGE);
+
+              return filteredReceipts.length === 0 ? (
+                <div className="p-12 text-center text-white/30">
+                  <p className="text-2xl mb-2">🔍</p>
+                  <p>No receipts matched your search.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="divide-y divide-white/5">
+                    {paginatedReceipts.map(receipt => (
+                      <div key={receipt.id} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/5 transition-colors group">
+                        <div className="col-span-2">
+                          <div className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</div>
+                          <div className="text-[9px] text-white/40 font-mono mt-0.5">{receipt.dateString?.split(' - ')[0]}</div>
+                        </div>
+                        <div className="col-span-4">
+                          <div className="font-bold text-sm text-white">{receipt.customerName}</div>
+                          <div className="text-xs text-white/50 truncate mt-0.5">{receipt.customerPhone || 'No Phone'}</div>
+                          <div className="text-[10px] text-white/35 mt-1 truncate">
+                            {receipt.items?.map(it => `${it.qty}x ${it.description}`).join(', ')}
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            receipt.formatType === 'prebooking' ? 'bg-orange-500/20 text-orange-350' :
+                            receipt.formatType === 'auction' ? 'bg-purple-500/20 text-purple-300' :
+                            'bg-blue-500/20 text-blue-300'
+                          }`}>
+                            {receipt.formatType === 'prebooking' ? 'Prebooking / PO' : 
+                             receipt.formatType === 'auction' ? 'Auction Win' : 'Sale'}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
+                        </div>
+                        <div className="col-span-2 flex justify-end gap-1.5">
+                          <button onClick={() => handleEditReceipt(receipt)} title="Edit receipt" className="p-2 text-white/60 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
+                            <Edit2 size={15} />
+                          </button>
+                          <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-2 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
+                            <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                          </button>
+                          <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-2 text-white/40 hover:text-gk-orange bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </div>
-                      <div className="col-span-2">
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          receipt.formatType === 'prebooking' ? 'bg-orange-500/20 text-orange-350' :
-                          receipt.formatType === 'auction' ? 'bg-purple-500/20 text-purple-300' :
-                          'bg-blue-500/20 text-blue-300'
-                        }`}>
-                          {receipt.formatType === 'prebooking' ? 'Prebooking' : 
-                           receipt.formatType === 'auction' ? 'Auction Win' : 'Sale'}
-                        </span>
-                      </div>
-                      <div className="col-span-2 text-right">
-                        <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
-                      </div>
-                      <div className="col-span-1 flex justify-end gap-2">
-                        <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-2 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
-                          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-                        </button>
-                        <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-2 text-white/40 hover:text-gk-orange bg-white/5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                    ))}
+                  </div>
+
+                  {/* Receipt Pagination Controls */}
+                  <div className="p-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 bg-black/20 text-xs text-white/60">
+                    <div>
+                      Showing <span className="font-bold text-white">{(receiptPage - 1) * RECEIPTS_PER_PAGE + 1}</span> to <span className="font-bold text-white">{Math.min(receiptPage * RECEIPTS_PER_PAGE, filteredReceipts.length)}</span> of <span className="font-bold text-white">{filteredReceipts.length}</span> receipts
                     </div>
-                  ))
-                }
-              </div>
-            )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={receiptPage === 1}
+                        onClick={() => setReceiptPage(p => Math.max(1, p - 1))}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <ChevronLeft size={14} /> Previous
+                      </button>
+                      <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-white font-mono font-bold">
+                        Page {receiptPage} of {totalReceiptPages}
+                      </div>
+                      <button
+                        disabled={receiptPage >= totalReceiptPages}
+                        onClick={() => setReceiptPage(p => Math.min(totalReceiptPages, p + 1))}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        Next <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1509,7 +2218,7 @@ export default function Admin() {
       <AnimatePresence>
         {activeReceiptPreview && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm no-print" onClick={() => setActiveReceiptPreview(null)}>
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-gk-black border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-6 shadow-[0_0_50px_rgba(59,130,246,0.15)] animate-none" onClick={e => e.stopPropagation()}>
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-gk-black border border-white/10 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto flex flex-col gap-6 shadow-[0_0_50px_rgba(59,130,246,0.15)] animate-none" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center pb-4 border-b border-white/10">
                 <div>
                   <h3 className="text-lg font-bold text-white">Receipt Details</h3>
@@ -1518,20 +2227,17 @@ export default function Admin() {
                 <button onClick={() => setActiveReceiptPreview(null)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
               </div>
 
-              {/* Receipt Body in screen view */}
-              <div className="bg-white text-black p-8 rounded-xl shadow-inner font-sans text-xs flex flex-col justify-between relative overflow-hidden" style={{ minHeight: '520px', color: '#000000', backgroundColor: '#ffffff' }}>
+              {/* Receipt Body in screen view - 100% 1:1 WYSIWYG match with print layout */}
+              <div className="bg-white text-black p-8 rounded-xl shadow-inner font-sans relative overflow-hidden flex flex-col justify-between" style={{ color: '#000000', backgroundColor: '#ffffff', minHeight: '620px' }}>
                 {/* Faint Premium Brand Watermark */}
                 <div className="absolute pointer-events-none select-none z-0 text-center" style={{
                   top: '50%',
                   left: '50%',
-                  transform: 'translate(-50%, -50%) rotate(-20deg)',
-                  fontSize: '48px',
+                  transform: 'translate(-50%, -50%) rotate(-25deg)',
+                  fontSize: '70px',
                   fontWeight: '900',
                   letterSpacing: '0.25em',
-                  background: 'linear-gradient(135deg, rgba(43, 149, 201, 0.12) 0%, rgba(67, 56, 202, 0.09) 50%, rgba(99, 102, 241, 0.06) 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  color: 'rgba(43, 149, 201, 0.08)',
+                  color: 'rgba(43, 149, 201, 0.085)',
                   width: '90%',
                   textAlign: 'center',
                   lineHeight: '1.2',
@@ -1544,89 +2250,92 @@ export default function Admin() {
 
                 <div className="relative z-10 flex flex-col justify-between h-full w-full">
                   <div>
-                  {/* Header */}
-                  <div className="flex justify-between items-start gap-4 mb-8">
-                    <div>
-                      <h1 className="text-2xl font-black leading-none tracking-tight">{activeReceiptPreview.companyName || 'Garage Kings India'}</h1>
-                      <p className="text-gray-600 text-xs mt-2">{activeReceiptPreview.companyLocation || 'Delhi'}</p>
+                    {/* Header */}
+                    <div className="flex justify-between items-start gap-4 mb-8">
+                      <div>
+                        <h1 className="text-3xl font-black leading-tight tracking-tight" style={{ fontSize: '28px', fontWeight: '900', fontFamily: 'system-ui, sans-serif', color: '#000000', margin: 0 }}>{activeReceiptPreview.companyName || 'Garage Kings India'}</h1>
+                        <p className="text-gray-600 text-sm" style={{ fontSize: '14px', margin: '6px 0 0 0', color: '#4b5563' }}>{activeReceiptPreview.companyLocation || 'Delhi'}</p>
+                      </div>
+                      <div className="text-right">
+                        <h2 className="text-3xl font-black text-gray-800 tracking-tight leading-none mb-1" style={{ fontSize: '28px', fontWeight: '900', margin: '0 0 4px 0', color: '#1f2937' }}>Receipt</h2>
+                        <p className="text-sm text-gray-600 font-semibold" style={{ fontSize: '12px', margin: 0, color: '#4b5563' }}>Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</p>
+                        <p className="text-xs text-gray-500 font-medium mt-1" style={{ fontSize: '11px', margin: '4px 0 0 0', color: '#6b7280' }}>Date &nbsp;{activeReceiptPreview.dateString}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <h2 className="text-2xl font-black text-gray-800 tracking-tight leading-none mb-1">Receipt</h2>
-                      <p className="text-xs text-gray-600 font-semibold mt-1.5">Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</p>
-                      <p className="text-[10px] text-gray-500 font-medium mt-1">Date &nbsp;{activeReceiptPreview.dateString}</p>
-                    </div>
-                  </div>
 
-                  {/* "To" Section */}
-                  <div className="mb-6">
-                    <div className="bg-[#2b95c9] text-white px-3 py-1 font-bold text-[10px] tracking-wider mb-2.5 rounded-sm">To</div>
-                    <div className="px-1 space-y-0.5 text-gray-800 text-[10px] leading-relaxed">
-                      <div className="font-bold text-black text-sm">{activeReceiptPreview.customerName}</div>
-                      {activeReceiptPreview.customerPhone && <div className="font-semibold">{activeReceiptPreview.customerPhone}</div>}
-                      {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1 leading-normal">{activeReceiptPreview.customerAddress}</div>}
+                    {/* "To" Section */}
+                    <div className="mb-8" style={{ marginTop: '30px', marginBottom: '30px' }}>
+                      <div className="bg-[#2b95c9] text-white px-4 py-1.5 font-bold text-xs tracking-wider mb-3 rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '6px 12px', letterSpacing: '0.05em' }}>To</div>
+                      <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
+                        <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{activeReceiptPreview.customerName}</div>
+                        {activeReceiptPreview.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{activeReceiptPreview.customerPhone}</div>}
+                        {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{activeReceiptPreview.customerAddress}</div>}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Table Section */}
-                  <div className="mb-6">
-                    <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-3 py-1.5 font-bold text-[10px] tracking-wider rounded-sm">
-                      <div className="col-span-2 text-center">Qty</div>
-                      <div className="col-span-7">Description</div>
-                      <div className="col-span-3 text-right">Amount</div>
-                    </div>
-                    
-                    <div className="divide-y divide-gray-150 px-1">
-                      {activeReceiptPreview.items?.map((it, idx) => (
-                        <div key={idx} className="grid grid-cols-12 gap-2 py-2 text-[10px]">
-                          <div className="col-span-2 text-center text-gray-600">{it.qty}</div>
-                          <div className="col-span-7 font-medium text-gray-800 truncate">{it.description}</div>
-                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-                      ))}
+                    {/* Table Section */}
+                    <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
+                      <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em' }}>
+                        <div className="col-span-2 text-center">Qty</div>
+                        <div className="col-span-7">Description</div>
+                        <div className="col-span-3 text-right">Amount</div>
+                      </div>
                       
-                      {activeReceiptPreview.includeShipping && (
-                        <div className="grid grid-cols-12 gap-2 py-2 text-[10px]">
-                          <div className="col-span-2 text-center text-gray-600">1</div>
-                          <div className="col-span-7 font-medium text-gray-800">Shipping Charges</div>
-                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                        {activeReceiptPreview.items?.map((it, idx) => (
+                          <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
+                            <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>{it.qty}</div>
+                            <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>{it.description}</div>
+                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </div>
+                        ))}
+                        
+                        {activeReceiptPreview.includeShipping && (
+                          <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
+                            <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>1</div>
+                            <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>Shipping Charges</div>
+                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Totals Section */}
+                  <div style={{ marginTop: '40px' }}>
+                    <div className="pt-4 space-y-2 text-right flex flex-col items-end" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingTop: '16px' }}>
+                      <div className="flex justify-between items-center text-xs text-gray-600 w-80" style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#4b5563' }}>
+                        <span>Including Tax ({activeReceiptPreview.taxPercent}%)</span>
+                        <span className="font-mono font-semibold" style={{ fontFamily: 'monospace', fontWeight: '600' }}>₹{Number(activeReceiptPreview.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm font-black text-black pt-2 w-80" style={{ borderTop: '1px solid #d1d5db', marginTop: '6px', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#000000', paddingTop: '8px' }}>
+                        <span>Total Paid</span>
+                        <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                      {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
+                        <div className="flex justify-between items-start text-xs text-red-600 font-bold pt-2 w-80 gap-3" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '340px', color: '#dc2626', paddingTop: '6px' }}>
+                          <div style={{ textAlign: 'left' }}>
+                            <div>Balance Due before Delivery</div>
+                            <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                          </div>
+                          <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                     </div>
-                  </div>
-                </div>
 
-                <div>
-                  <div className="border-t border-gray-300 pt-3 space-y-1.5" style={{ borderTop: '1px solid #d1d5db' }}>
-                    <div className="flex justify-between items-center text-[10px] text-gray-600">
-                      <span>Including Tax ({activeReceiptPreview.taxPercent}%)</span>
-                      <span className="font-mono font-semibold">₹{Number(activeReceiptPreview.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm font-black text-black pt-1" style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
-                      <span>Total Paid</span>
-                      <span className="font-mono font-black text-lg">₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-
-                    {/* Pending Balance Row */}
-                    {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
-                      <div className="flex justify-between items-center text-[10px] text-red-650 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5">
-                        <span>Balance Due before Delivery</span>
-                        <span className="font-mono font-bold text-red-650">₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    {/* Footer refund policy statement */}
+                    {activeReceiptPreview.footerNote && (
+                      <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '60px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
+                        {activeReceiptPreview.footerNote}
                       </div>
                     )}
                   </div>
-
-                  {activeReceiptPreview.footerNote && (
-                    <div className="mt-8 text-center text-[9px] text-gray-800 font-medium leading-normal px-2">
-                      {activeReceiptPreview.footerNote}
-                    </div>
-                  )}
-                </div>
                 </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
                 <button onClick={() => setActiveReceiptPreview(null)} className="px-6 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold transition-colors text-sm cursor-pointer">Close</button>
-                <button onClick={() => window.print()} className="px-6 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-650 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer">
+                <button onClick={() => { window.print(); setActiveReceiptPreview(null); }} className="px-6 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-650 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer">
                   <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                   Print / Save PDF
                 </button>
@@ -1712,18 +2421,21 @@ export default function Admin() {
           {/* Totals Section */}
           <div style={{ marginTop: '40px' }}>
             <div className="pt-4 space-y-2 text-right flex flex-col items-end" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingTop: '16px' }}>
-              <div className="flex justify-between items-center text-xs text-gray-600 w-72" style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#4b5563' }}>
+              <div className="flex justify-between items-center text-xs text-gray-600 w-80" style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#4b5563' }}>
                 <span>Including Tax ({activeReceiptPreview.taxPercent}%)</span>
                 <span className="font-mono font-semibold" style={{ fontFamily: 'monospace', fontWeight: '600' }}>₹{Number(activeReceiptPreview.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between items-center text-sm font-black text-black pt-2 w-72" style={{ borderTop: '1px solid #d1d5db', marginTop: '6px', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#000000', paddingTop: '8px' }}>
+              <div className="flex justify-between items-center text-sm font-black text-black pt-2 w-80" style={{ borderTop: '1px solid #d1d5db', marginTop: '6px', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#000000', paddingTop: '8px' }}>
                 <span>Total Paid</span>
                 <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
-                <div className="flex justify-between items-center text-xs text-red-600 font-bold pt-2 w-72" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '280px', color: '#dc2626', paddingTop: '6px' }}>
-                  <span>Balance Due before Delivery</span>
-                  <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <div className="flex justify-between items-start text-xs text-red-600 font-bold pt-2 w-80 gap-3" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '340px', color: '#dc2626', paddingTop: '6px' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div>Balance Due before Delivery</div>
+                    <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                  </div>
+                  <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
             </div>

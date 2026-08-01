@@ -312,7 +312,17 @@ export async function addReceipt(receipt) {
   return { id: docRef.id, ...receipt };
 }
 
+export async function updateReceipt(id, receipt) {
+  checkFirebase();
+  await updateDoc(doc(db, 'receipts', id), {
+    ...receipt,
+    updatedAt: new Date().toISOString()
+  });
+  return { id, ...receipt };
+}
+
 export async function deleteReceipt(id) {
   checkFirebase();
   await deleteDoc(doc(db, 'receipts', id));
 }
+
