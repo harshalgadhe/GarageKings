@@ -1,10 +1,172 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import * as XLSX from 'xlsx'
+
+const parseReceiptDate = (receipt) => {
+  if (!receipt) return new Date();
+  
+  if (receipt.receiptDate) {
+    const d = new Date(receipt.receiptDate);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  if (receipt.dateString) {
+    let str = String(receipt.dateString).trim();
+    str = str.replace(/^[A-Za-z]+,\s*/, '');
+
+    const dmyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      const d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    const cleanedStr = str.replace(/\s*-\s*/, ' ');
+    const parsed = new Date(cleanedStr);
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    const datePart = str.split(' - ')[0];
+    const parsedDatePart = new Date(datePart);
+    if (!isNaN(parsedDatePart.getTime())) return parsedDatePart;
+  }
+
+  if (receipt.createdAt) {
+    const d = new Date(receipt.createdAt);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return new Date();
+};
+
+const getDatetimeLocalValue = (dateObj = new Date()) => {
+  if (!dateObj || isNaN(dateObj.getTime())) dateObj = new Date();
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const hours = String(dateObj.getHours()).padStart(2, '0');
+  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+const formatReceiptDate = (d = new Date()) => {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  
+  const dayName = days[d.getDay()];
+  const dateNum = d.getDate();
+  const monthName = months[d.getMonth()];
+  const year = d.getFullYear();
+  
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  
+  return `${dayName}, ${dateNum} ${monthName} ${year} - ${hours}:${minutes} ${ampm}`;
+};
+
+const exportReceiptsToExcel = (receiptsList, groupBy = 'format', filterType = 'all', searchOnly = false, searchStr = '') => {
+  let list = receiptsList;
+  if (searchOnly && searchStr) {
+    const s = searchStr.toLowerCase();
+    list = list.filter(r => 
+      r.customerName?.toLowerCase().includes(s) || 
+      r.customerPhone?.toLowerCase().includes(s) || 
+      r.receiptNumber?.toLowerCase().includes(s) ||
+      r.customerEmail?.toLowerCase().includes(s) ||
+      r.customerInsta?.toLowerCase().includes(s)
+    );
+  }
+
+  if (filterType !== 'all') {
+    list = list.filter(r => (r.formatType || 'standard') === filterType);
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  const mapReceiptRow = (r) => ({
+    'Receipt #': r.receiptNumber || '',
+    'Receipt Date': r.dateString || '',
+    'Customer Name': r.customerName || '',
+    'Phone': r.customerPhone || '',
+    'Email': r.customerEmail || '',
+    'Instagram': r.customerInsta || '',
+    'Format': r.formatType === 'prebooking' ? 'Prebooking / PO' : r.formatType === 'auction' ? 'Auction Win' : 'Standard Sale',
+    'Items Summary': r.items?.map(it => `${it.qty}x ${it.description} (₹${it.amount})`).join(' | ') || '',
+    'Item Count': r.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0,
+    'Subtotal (₹)': r.items?.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.amount) || 0)), 0) || 0,
+    'Shipping (₹)': Number(r.shippingCharges || 0),
+    'Total Amount Paid (₹)': Number(r.totalAmount || 0),
+    'Pending Balance Due (₹)': Number(r.pendingBalance || 0),
+    'Shipping Address': r.customerAddress || '',
+    'Company': r.companyName || 'Garage Kings India',
+    'Created At (DB)': r.createdAt || ''
+  });
+
+  const colWidths = [
+    { wch: 14 }, // Receipt #
+    { wch: 32 }, // Date
+    { wch: 22 }, // Customer Name
+    { wch: 15 }, // Phone
+    { wch: 25 }, // Email
+    { wch: 18 }, // Insta
+    { wch: 18 }, // Format
+    { wch: 45 }, // Items
+    { wch: 12 }, // Item Count
+    { wch: 14 }, // Subtotal
+    { wch: 14 }, // Shipping
+    { wch: 20 }, // Total
+    { wch: 22 }, // Pending
+    { wch: 35 }, // Address
+    { wch: 20 }, // Company
+    { wch: 25 }  // Created At
+  ];
+
+  const masterData = list.map(mapReceiptRow);
+  const wsMaster = XLSX.utils.json_to_sheet(masterData.length > 0 ? masterData : [{ 'Status': 'No receipts matched selected filters' }]);
+  wsMaster['!cols'] = colWidths;
+  XLSX.utils.book_append_sheet(wb, wsMaster, 'All Receipts');
+
+  if (groupBy === 'format') {
+    const formatKeys = [
+      { key: 'standard', title: 'Standard Sales' },
+      { key: 'prebooking', title: 'Prebooking PO' },
+      { key: 'auction', title: 'Auction Wins' }
+    ];
+    formatKeys.forEach(fk => {
+      const groupItems = list.filter(r => (r.formatType || 'standard') === fk.key).map(mapReceiptRow);
+      if (groupItems.length > 0) {
+        const wsGroup = XLSX.utils.json_to_sheet(groupItems);
+        wsGroup['!cols'] = colWidths;
+        XLSX.utils.book_append_sheet(wb, wsGroup, fk.title);
+      }
+    });
+  } else if (groupBy === 'month') {
+    const monthMap = {};
+    list.forEach(r => {
+      const d = parseReceiptDate(r);
+      const mLabel = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+      if (!monthMap[mLabel]) monthMap[mLabel] = [];
+      monthMap[mLabel].push(mapReceiptRow(r));
+    });
+
+    Object.keys(monthMap).forEach(mLabel => {
+      const wsMonth = XLSX.utils.json_to_sheet(monthMap[mLabel]);
+      wsMonth['!cols'] = colWidths;
+      XLSX.utils.book_append_sheet(wb, wsMonth, mLabel.slice(0, 31));
+    });
+  }
+
+  XLSX.writeFile(wb, `GarageKings_Receipts_${groupBy}_grouped_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -54,6 +216,12 @@ export default function Admin() {
   const [receiptSearch, setReceiptSearch] = useState('')
   const [receiptPage, setReceiptPage] = useState(1)
   const RECEIPTS_PER_PAGE = 20
+
+  // Excel Export Modal state
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
+  const [excelGroupBy, setExcelGroupBy] = useState('format') // 'format', 'month', 'none'
+  const [excelFilterType, setExcelFilterType] = useState('all') // 'all', 'standard', 'prebooking', 'auction'
+  const [excelSearchOnly, setExcelSearchOnly] = useState(false)
 
   // Interactive Chart state
   const [chartTimeframe, setChartTimeframe] = useState('daily') // 'daily', 'weekly', 'monthly'
@@ -507,61 +675,7 @@ export default function Admin() {
     return `RT${String(nextNum).padStart(5, '0')}`;
   }
 
-  const parseReceiptDate = (receipt) => {
-    if (!receipt) return new Date();
-    
-    if (receipt.receiptDate) {
-      const d = new Date(receipt.receiptDate);
-      if (!isNaN(d.getTime())) return d;
-    }
 
-    if (receipt.dateString) {
-      let str = String(receipt.dateString).trim();
-      str = str.replace(/^[A-Za-z]+,\s*/, '');
-
-      const dmyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
-      if (dmyMatch) {
-        const day = parseInt(dmyMatch[1], 10);
-        const month = parseInt(dmyMatch[2], 10) - 1;
-        const year = parseInt(dmyMatch[3], 10);
-        const d = new Date(year, month, day);
-        if (!isNaN(d.getTime())) return d;
-      }
-
-      const cleanedStr = str.replace(/\s*-\s*/, ' ');
-      const parsed = new Date(cleanedStr);
-      if (!isNaN(parsed.getTime())) return parsed;
-
-      const datePart = str.split(' - ')[0];
-      const parsedDatePart = new Date(datePart);
-      if (!isNaN(parsedDatePart.getTime())) return parsedDatePart;
-    }
-
-    if (receipt.createdAt) {
-      const d = new Date(receipt.createdAt);
-      if (!isNaN(d.getTime())) return d;
-    }
-
-    return new Date();
-  };
-
-  const formatReceiptDate = (d = new Date()) => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    const dayName = days[d.getDay()];
-    const dateNum = d.getDate();
-    const monthName = months[d.getMonth()];
-    const year = d.getFullYear();
-    
-    let hours = d.getHours();
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12; // 0 should be 12
-    
-    return `${dayName}, ${dateNum} ${monthName} ${year} - ${hours}:${minutes} ${ampm}`;
-  }
 
   const handleFormatTypeChange = (type) => {
     let footerNote = '';
@@ -587,9 +701,11 @@ export default function Admin() {
 
   const handleEditReceipt = (receipt) => {
     setEditingReceiptId(receipt.id);
+    const parsedDate = parseReceiptDate(receipt);
     setReceiptForm({
       receiptNumber: receipt.receiptNumber || '',
-      dateString: receipt.dateString || '',
+      dateString: receipt.dateString || formatReceiptDate(parsedDate),
+      calendarDate: getDatetimeLocalValue(parsedDate),
       companyName: receipt.companyName || 'Garage Kings India',
       companyLocation: receipt.companyLocation || 'Delhi',
       customerName: receipt.customerName || '',
@@ -626,8 +742,9 @@ export default function Admin() {
       const taxAmount = (subtotal + shipping) * taxRate;
       const totalAmount = subtotal + shipping + taxAmount;
 
-      const finalDateString = receiptForm.dateString || formatReceiptDate();
-      const computedReceiptDate = parseReceiptDate({ dateString: finalDateString }).toISOString();
+      const dateToUse = receiptForm.calendarDate ? new Date(receiptForm.calendarDate) : parseReceiptDate({ dateString: receiptForm.dateString });
+      const finalDateString = formatReceiptDate(dateToUse);
+      const computedReceiptDate = dateToUse.toISOString();
 
       const receiptData = {
         receiptNumber: receiptForm.receiptNumber.trim(),
@@ -782,10 +899,12 @@ export default function Admin() {
             </button>
             <button 
               onClick={() => {
+                const now = new Date();
                 setEditingReceiptId(null);
                 setReceiptForm({
                   receiptNumber: suggestNextReceiptNumber(receipts),
-                  dateString: formatReceiptDate(),
+                  dateString: formatReceiptDate(now),
+                  calendarDate: getDatetimeLocalValue(now),
                   companyName: 'Garage Kings India',
                   companyLocation: 'Delhi',
                   customerName: '',
@@ -1234,7 +1353,18 @@ export default function Admin() {
                   <h3 className="font-bold text-white text-sm uppercase tracking-wider text-white/50">Quick Actions</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => { setAdminTab('receipts'); setEditingReceiptId(null); setIsAddingReceipt(true); }}
+                      onClick={() => { 
+                        const now = new Date();
+                        setAdminTab('receipts'); 
+                        setEditingReceiptId(null); 
+                        setReceiptForm(prev => ({
+                          ...prev,
+                          receiptNumber: suggestNextReceiptNumber(receipts),
+                          dateString: formatReceiptDate(now),
+                          calendarDate: getDatetimeLocalValue(now)
+                        }));
+                        setIsAddingReceipt(true); 
+                      }}
                       className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 font-bold text-xs hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Plus size={14} /> New Receipt
@@ -1252,7 +1382,7 @@ export default function Admin() {
           </div>
         )}
         {adminTab === 'inventory' && (
-          <>
+          <div className="space-y-8">
         <AnimatePresence>
           {isSettingsOpen && (
             <motion.div 
@@ -1515,7 +1645,7 @@ export default function Admin() {
             </div>
           )}
         </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1764,8 +1894,29 @@ export default function Admin() {
                           <input type="text" value={receiptForm.receiptNumber} onChange={e => setReceiptForm(prev => ({ ...prev, receiptNumber: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Date & Time *</label>
-                          <input type="text" value={receiptForm.dateString} onChange={e => setReceiptForm(prev => ({ ...prev, dateString: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2 flex items-center justify-between">
+                            <span>Receipt Date & Time *</span>
+                            <span className="text-[10px] text-blue-400 font-normal lowercase">(calendar picker)</span>
+                          </label>
+                          <input 
+                            type="datetime-local" 
+                            value={receiptForm.calendarDate || getDatetimeLocalValue(parseReceiptDate(receiptForm))} 
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (!val) return;
+                              const d = new Date(val);
+                              const formatted = formatReceiptDate(d);
+                              setReceiptForm(prev => ({
+                                ...prev,
+                                calendarDate: val,
+                                dateString: formatted
+                              }));
+                            }} 
+                            className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 [color-scheme:dark]" 
+                          />
+                          <p className="text-[11px] text-blue-300 font-medium mt-1.5 truncate">
+                            Label on Receipt: {receiptForm.dateString || formatReceiptDate()}
+                          </p>
                         </div>
                       </div>
 
@@ -2123,7 +2274,14 @@ export default function Admin() {
                 <h3 className="font-bold text-white text-base">Receipt Records</h3>
                 <p className="text-xs text-white/50 mt-1">Search, print, or manage previously generated client receipts.</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => setIsExcelModalOpen(true)}
+                  className="px-4 py-2 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-emerald-300 font-bold text-xs hover:bg-emerald-500/25 transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-sm"
+                  title="Export receipts to Excel with group-by tabs and filters"
+                >
+                  <FileSpreadsheet size={15} /> Export Excel (.xlsx)
+                </button>
                 <input 
                   type="text" 
                   placeholder="Search customer, phone, email, @insta, or RT#..." 
@@ -2475,10 +2633,130 @@ export default function Admin() {
               </div>
             )}
           </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+      {/* Excel Export Filtered Modal */}
+      <AnimatePresence>
+        {isExcelModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setIsExcelModalOpen(false)}>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#111116] border border-emerald-500/30 rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-[0_0_50px_rgba(16,185,129,0.15)] text-white space-y-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                    <FileSpreadsheet size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Export Receipts to Excel</h3>
+                    <p className="text-xs text-white/50">Generate a custom multi-sheet .xlsx workbook with group-by tabs</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsExcelModalOpen(false)} className="text-white/40 hover:text-white cursor-pointer"><X size={20} /></button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Group By Selector */}
+                <div>
+                  <label className="block text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Filter size={14} /> Group By (Creates Individual Excel Tabs)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => setExcelGroupBy('format')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                        excelGroupBy === 'format' 
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' 
+                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      🏷️ By Format
+                      <span className="block text-[10px] font-normal opacity-60 mt-0.5">(Standard vs PO)</span>
+                    </button>
+                    <button
+                      onClick={() => setExcelGroupBy('month')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                        excelGroupBy === 'month' 
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' 
+                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      📅 By Month
+                      <span className="block text-[10px] font-normal opacity-60 mt-0.5">(Aug 2026, Jul...)</span>
+                    </button>
+                    <button
+                      onClick={() => setExcelGroupBy('none')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                        excelGroupBy === 'none' 
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' 
+                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      📋 Single Sheet
+                      <span className="block text-[10px] font-normal opacity-60 mt-0.5">(Flat list)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter by Format Type */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/60 uppercase tracking-wider mb-2">Filter Format Type</label>
+                  <select 
+                    value={excelFilterType} 
+                    onChange={e => setExcelFilterType(e.target.value)}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="all">All Formats (Standard Sales + Prebooking PO + Auctions)</option>
+                    <option value="standard">Standard Sales Only</option>
+                    <option value="prebooking">Prebooking / PO Only</option>
+                    <option value="auction">Auction Wins Only</option>
+                  </select>
+                </div>
+
+                {/* Search Filter Scope */}
+                {receiptSearch && (
+                  <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between">
+                    <div className="text-xs text-white/70">
+                      Include only search results matching <span className="text-emerald-300 font-mono font-bold">&quot;{receiptSearch}&quot;</span>?
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={excelSearchOnly} 
+                      onChange={e => setExcelSearchOnly(e.target.checked)} 
+                      className="w-4 h-4 accent-emerald-500 cursor-pointer" 
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setIsExcelModalOpen(false)}
+                  className="w-1/3 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold text-xs hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    exportReceiptsToExcel(receipts, excelGroupBy, excelFilterType, excelSearchOnly, receiptSearch);
+                    setIsExcelModalOpen(false);
+                  }}
+                  className="w-2/3 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
+                >
+                  <FileSpreadsheet size={16} /> Download Excel Workbook (.xlsx)
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>,
-        document.body
-      )}
+        )}
+      </AnimatePresence>
     </div>
   )
 }
