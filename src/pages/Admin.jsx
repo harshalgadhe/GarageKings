@@ -119,7 +119,7 @@ export default function Admin() {
 
     receipts.forEach(r => {
       const amt = Number(r.totalAmount) || 0;
-      const rDate = r.createdAt ? new Date(r.createdAt) : new Date();
+      const rDate = parseReceiptDate(r);
 
       const matchedBucket = buckets.find(b => rDate >= b.startDate && rDate <= b.endDate);
       if (matchedBucket) {
@@ -162,7 +162,7 @@ export default function Admin() {
     receipts.forEach(r => {
       const totalPaid = Number(r.totalAmount) || 0;
       const pending = Number(r.pendingBalance) || 0;
-      const rDate = r.createdAt ? new Date(r.createdAt) : new Date();
+      const rDate = parseReceiptDate(r);
 
       if (r.formatType === 'prebooking') {
         poRevenue += totalPaid;
@@ -507,6 +507,44 @@ export default function Admin() {
     return `RT${String(nextNum).padStart(5, '0')}`;
   }
 
+  const parseReceiptDate = (receipt) => {
+    if (!receipt) return new Date();
+    
+    if (receipt.receiptDate) {
+      const d = new Date(receipt.receiptDate);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    if (receipt.dateString) {
+      let str = String(receipt.dateString).trim();
+      str = str.replace(/^[A-Za-z]+,\s*/, '');
+
+      const dmyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+      if (dmyMatch) {
+        const day = parseInt(dmyMatch[1], 10);
+        const month = parseInt(dmyMatch[2], 10) - 1;
+        const year = parseInt(dmyMatch[3], 10);
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d;
+      }
+
+      const cleanedStr = str.replace(/\s*-\s*/, ' ');
+      const parsed = new Date(cleanedStr);
+      if (!isNaN(parsed.getTime())) return parsed;
+
+      const datePart = str.split(' - ')[0];
+      const parsedDatePart = new Date(datePart);
+      if (!isNaN(parsedDatePart.getTime())) return parsedDatePart;
+    }
+
+    if (receipt.createdAt) {
+      const d = new Date(receipt.createdAt);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    return new Date();
+  };
+
   const formatReceiptDate = (d = new Date()) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -588,9 +626,13 @@ export default function Admin() {
       const taxAmount = (subtotal + shipping) * taxRate;
       const totalAmount = subtotal + shipping + taxAmount;
 
+      const finalDateString = receiptForm.dateString || formatReceiptDate();
+      const computedReceiptDate = parseReceiptDate({ dateString: finalDateString }).toISOString();
+
       const receiptData = {
         receiptNumber: receiptForm.receiptNumber.trim(),
-        dateString: receiptForm.dateString || formatReceiptDate(),
+        dateString: finalDateString,
+        receiptDate: computedReceiptDate,
         companyName: companyName.trim(),
         companyLocation: companyLocation.trim(),
         customerName: receiptForm.customerName.trim(),
