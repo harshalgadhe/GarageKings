@@ -414,7 +414,8 @@ export default function Admin() {
     includeShipping: true,
     taxPercent: 0,
     footerNote: 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.',
-    pendingBalance: ''
+    pendingBalance: '',
+    showExcludingShipping: true
   })
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
 
@@ -695,7 +696,8 @@ export default function Admin() {
       ...prev,
       formatType: type,
       includeShipping,
-      footerNote
+      footerNote,
+      showExcludingShipping: type === 'prebooking' ? true : prev.showExcludingShipping
     }));
   }
 
@@ -719,7 +721,8 @@ export default function Admin() {
       includeShipping: receipt.includeShipping !== undefined ? receipt.includeShipping : true,
       taxPercent: receipt.taxPercent !== undefined ? receipt.taxPercent : 0,
       footerNote: receipt.footerNote !== undefined ? receipt.footerNote : '',
-      pendingBalance: receipt.pendingBalance !== undefined && receipt.pendingBalance !== 0 ? String(receipt.pendingBalance) : ''
+      pendingBalance: receipt.pendingBalance !== undefined ? String(receipt.pendingBalance) : '',
+      showExcludingShipping: receipt.showExcludingShipping !== undefined ? receipt.showExcludingShipping : (receipt.formatType === 'prebooking')
     });
     setIsAddingReceipt(true);
   }
@@ -764,7 +767,8 @@ export default function Admin() {
         taxPercent: Number(receiptForm.taxPercent),
         taxAmount,
         totalAmount,
-        pendingBalance: pendingBalance ? Number(pendingBalance) : 0,
+        pendingBalance: pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined ? Number(pendingBalance) : 0,
+        showExcludingShipping: receiptForm.showExcludingShipping !== false,
         footerNote: footerNote.trim()
       };
 
@@ -2101,16 +2105,31 @@ export default function Admin() {
                           </select>
                         </div>
                         {receiptForm.formatType === 'prebooking' && (
-                          <div className="md:col-span-4 border-t border-white/5 pt-4 mt-2">
-                            <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Pending Balance / Remaining Amount (₹)</label>
-                            <input 
-                              type="number" 
-                              min="0" 
-                              placeholder="Enter remaining balance to be paid before delivery (e.g. 4000)" 
-                              value={receiptForm.pendingBalance} 
-                              onChange={e => setReceiptForm(prev => ({ ...prev, pendingBalance: e.target.value }))} 
-                              className="w-full bg-black/55 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 font-semibold" 
-                            />
+                          <div className="md:col-span-4 border-t border-white/5 pt-4 mt-2 space-y-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Pending Balance / Remaining Amount (₹)</label>
+                              <input 
+                                type="number" 
+                                min="0" 
+                                placeholder="Enter remaining balance to be paid before delivery (e.g. 4000 or 0)" 
+                                value={receiptForm.pendingBalance} 
+                                onChange={e => setReceiptForm(prev => ({ ...prev, pendingBalance: e.target.value }))} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 font-semibold" 
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-2.5 pt-1">
+                              <input 
+                                type="checkbox" 
+                                id="showExcludingShipping"
+                                checked={receiptForm.showExcludingShipping !== false} 
+                                onChange={e => setReceiptForm(prev => ({ ...prev, showExcludingShipping: e.target.checked }))} 
+                                className="w-4 h-4 accent-blue-500 rounded cursor-pointer"
+                              />
+                              <label htmlFor="showExcludingShipping" className="text-xs font-medium text-white/90 cursor-pointer select-none">
+                                Show <span className="text-red-400 font-bold">&quot;(Excluding shipping)&quot;</span> note &amp; balance due row on receipt
+                              </label>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2240,13 +2259,15 @@ export default function Admin() {
                             </div>
 
                             {/* Pending Balance Row */}
-                            {receiptForm.formatType === 'prebooking' && receiptForm.pendingBalance && Number(receiptForm.pendingBalance) > 0 && (
+                            {receiptForm.formatType === 'prebooking' && (receiptForm.showExcludingShipping !== false || (receiptForm.pendingBalance !== '' && Number(receiptForm.pendingBalance) > 0)) && (
                               <div className="flex justify-between items-start text-[10px] text-red-600 font-bold pt-1.5 border-t border-dashed border-gray-300 mt-1.5 gap-2">
                                 <div>
                                   <div>Balance Due before Delivery</div>
-                                  <div className="text-[9px] text-red-500 font-normal">(Excluding shipping)</div>
+                                  {receiptForm.showExcludingShipping !== false && (
+                                    <div className="text-[9px] text-red-500 font-normal">(Excluding shipping)</div>
+                                  )}
                                 </div>
-                                <span className="font-mono font-bold text-red-650 whitespace-nowrap shrink-0">₹{Number(receiptForm.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <span className="font-mono font-bold text-red-650 whitespace-nowrap shrink-0">₹{Number(receiptForm.pendingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                               </div>
                             )}
                           </div>
@@ -2496,13 +2517,15 @@ export default function Admin() {
                         <span>Total Paid</span>
                         <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
-                      {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
+                      {activeReceiptPreview.formatType === 'prebooking' && (activeReceiptPreview.showExcludingShipping !== false || (activeReceiptPreview.pendingBalance !== undefined && Number(activeReceiptPreview.pendingBalance) > 0)) && (
                         <div className="flex justify-between items-start text-xs text-red-600 font-bold pt-2 w-80 gap-3" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '340px', color: '#dc2626', paddingTop: '6px' }}>
                           <div style={{ textAlign: 'left' }}>
                             <div>Balance Due before Delivery</div>
-                            <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                            {activeReceiptPreview.showExcludingShipping !== false && (
+                              <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                            )}
                           </div>
-                          <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
                     </div>
@@ -2615,13 +2638,15 @@ export default function Admin() {
                 <span>Total Paid</span>
                 <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(activeReceiptPreview.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
-              {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.pendingBalance && Number(activeReceiptPreview.pendingBalance) > 0 && (
+              {activeReceiptPreview.formatType === 'prebooking' && (activeReceiptPreview.showExcludingShipping !== false || (activeReceiptPreview.pendingBalance !== undefined && Number(activeReceiptPreview.pendingBalance) > 0)) && (
                 <div className="flex justify-between items-start text-xs text-red-600 font-bold pt-2 w-80 gap-3" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '340px', color: '#dc2626', paddingTop: '6px' }}>
                   <div style={{ textAlign: 'left' }}>
                     <div>Balance Due before Delivery</div>
-                    <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                    {activeReceiptPreview.showExcludingShipping !== false && (
+                      <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                    )}
                   </div>
-                  <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(activeReceiptPreview.pendingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
             </div>
