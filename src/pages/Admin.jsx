@@ -453,7 +453,7 @@ export default function Admin() {
       const n = cust.customerName.toLowerCase();
       const p = cust.customerPhone.toLowerCase();
       return (nameSearch && n.includes(nameSearch)) || (phoneSearch && p.includes(phoneSearch));
-    }).slice(0, 8);
+    }).slice(0, 50);
   }, [uniqueCustomerSuggestions, receiptForm.customerName, receiptForm.customerPhone, showCustomerDropdown]);
 
   const handleSelectCustomerSuggestion = (cust) => {
@@ -504,7 +504,7 @@ export default function Admin() {
     if (!search) return [];
     return uniqueProductSuggestions.filter(prod => 
       prod.description.toLowerCase().includes(search)
-    ).slice(0, 8);
+    ).slice(0, 50);
   };
 
   useEffect(() => {
@@ -2053,11 +2053,14 @@ export default function Admin() {
                               className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
                             />
 
-                            {/* CUSTOMER AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box) */}
+                            {/* CUSTOMER AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box & scrollable) */}
                             {showCustomerDropdown && customerMatches.length > 0 && (
-                              <div className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10">
-                                <div className="px-3 py-1.5 bg-blue-500/15 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center">
-                                  <span>Click customer to auto-fill</span>
+                              <div 
+                                onMouseDown={(e) => e.preventDefault()}
+                                className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10"
+                              >
+                                <div className="sticky top-0 bg-[#161622] px-3 py-1.5 border-b border-white/10 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center z-10">
+                                  <span>Click customer to auto-fill ({customerMatches.length})</span>
                                   <button type="button" onClick={() => setShowCustomerDropdown(false)} className="text-white/40 hover:text-white"><X size={12} /></button>
                                 </div>
                                 {customerMatches.map((cust, idx) => (
@@ -2206,9 +2209,12 @@ export default function Admin() {
                                   className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
                                 />
 
-                                {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box) */}
+                                {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box & scrollable) */}
                                 {activeProductDropdownIndex === index && getProductMatches(item.description).length > 0 && (
-                                  <div className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-48 overflow-y-auto divide-y divide-white/10">
+                                  <div 
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-48 overflow-y-auto divide-y divide-white/10"
+                                  >
                                     {getProductMatches(item.description).map((prod, pIdx) => (
                                       <div 
                                         key={pIdx}
