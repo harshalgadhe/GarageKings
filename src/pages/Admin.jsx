@@ -418,6 +418,94 @@ export default function Admin() {
     showExcludingShipping: true
   })
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
+
+  // 1. Unique Customer Suggestions from past receipts
+  const uniqueCustomerSuggestions = useMemo(() => {
+    const map = new Map();
+    receipts.forEach(r => {
+      const name = (r.customerName || '').trim();
+      const phone = (r.customerPhone || '').trim();
+      if (!name && !phone) return;
+      const key = `${phone.toLowerCase()}::${name.toLowerCase()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: r.customerEmail || '',
+          customerInsta: r.customerInsta || '',
+          customerAddress: r.customerAddress || ''
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [receipts]);
+
+  // 2. Filtered Customer Matches
+  const customerMatches = useMemo(() => {
+    if (!showCustomerDropdown) return [];
+    const nameSearch = (receiptForm.customerName || '').trim().toLowerCase();
+    const phoneSearch = (receiptForm.customerPhone || '').trim().toLowerCase();
+    if (!nameSearch && !phoneSearch) return [];
+    
+    return uniqueCustomerSuggestions.filter(cust => {
+      const n = cust.customerName.toLowerCase();
+      const p = cust.customerPhone.toLowerCase();
+      return (nameSearch && n.includes(nameSearch)) || (phoneSearch && p.includes(phoneSearch));
+    }).slice(0, 8);
+  }, [uniqueCustomerSuggestions, receiptForm.customerName, receiptForm.customerPhone, showCustomerDropdown]);
+
+  const handleSelectCustomerSuggestion = (cust) => {
+    setReceiptForm(prev => ({
+      ...prev,
+      customerName: cust.customerName || prev.customerName,
+      customerPhone: cust.customerPhone || prev.customerPhone,
+      customerEmail: cust.customerEmail || prev.customerEmail,
+      customerInsta: cust.customerInsta || prev.customerInsta,
+      customerAddress: cust.customerAddress || prev.customerAddress
+    }));
+    setShowCustomerDropdown(false);
+  };
+
+  // 3. Unique Product Suggestions from past receipts & inventory cars
+  const uniqueProductSuggestions = useMemo(() => {
+    const map = new Map();
+    // From past receipts
+    receipts.forEach(r => {
+      if (!r.items) return;
+      r.items.forEach(it => {
+        if (!it.description) return;
+        const key = it.description.trim().toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, {
+            description: it.description.trim(),
+            amount: String(it.amount || '')
+          });
+        }
+      });
+    });
+    // From current inventory cars
+    cars.forEach(car => {
+      const desc = `${car.brand} ${car.name}${car.grade ? ' - ' + car.grade : ''}`.trim();
+      const key = desc.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          description: desc,
+          amount: String(car.price || '')
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [receipts, cars]);
+
+  const getProductMatches = (currentDesc) => {
+    const search = (currentDesc || '').trim().toLowerCase();
+    if (!search) return [];
+    return uniqueProductSuggestions.filter(prod => 
+      prod.description.toLowerCase().includes(search)
+    ).slice(0, 8);
+  };
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -1938,29 +2026,98 @@ export default function Admin() {
                         </div>
                       </div>
 
-                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
-                        <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Customer Details</h3>
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4 relative">
+                        <div className="flex justify-between items-center">
+                          <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Customer Details</h3>
+                          {customerMatches.length > 0 && (
+                            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 animate-pulse">
+                              ✨ {customerMatches.length} Past Customer{customerMatches.length > 1 ? 's' : ''} Found
+                            </span>
+                          )}
+                        </div>
+
+                        {/* FLOATING CUSTOMER AUTOCOMPLETE DROPDOWN */}
+                        {showCustomerDropdown && customerMatches.length > 0 && (
+                          <div className="absolute top-12 left-4 right-4 z-40 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10">
+                            <div className="px-3 py-1.5 bg-blue-500/15 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center">
+                              <span>Click customer to auto-fill details</span>
+                              <button type="button" onClick={() => setShowCustomerDropdown(false)} className="text-white/40 hover:text-white"><X size={12} /></button>
+                            </div>
+                            {customerMatches.map((cust, idx) => (
+                              <div 
+                                key={idx}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleSelectCustomerSuggestion(cust);
+                                }}
+                                className="p-3 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-300 font-bold text-xs flex items-center justify-center border border-blue-500/30 shrink-0">
+                                    {cust.customerName ? cust.customerName[0].toUpperCase() : '👤'}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors flex items-center gap-2">
+                                      <span className="truncate">{cust.customerName.length > 22 ? cust.customerName.slice(0, 20) + '...' : cust.customerName}</span>
+                                      <span className="text-white/40 font-normal">-</span>
+                                      <span className="font-mono text-blue-400 font-semibold shrink-0">{cust.customerPhone || 'No Phone'}</span>
+                                    </div>
+                                    {(cust.customerEmail || cust.customerInsta) && (
+                                      <div className="text-[10px] text-white/50 truncate mt-0.5">
+                                        {cust.customerEmail} {cust.customerEmail && cust.customerInsta ? '•' : ''} {cust.customerInsta}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">Auto-fill ↵</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Name *</label>
-                            <input type="text" placeholder="e.g. Rasesh Talati" value={receiptForm.customerName} onChange={e => setReceiptForm(prev => ({ ...prev, customerName: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                            <input 
+                              type="text" 
+                              placeholder="e.g. Rasesh Talati" 
+                              value={receiptForm.customerName} 
+                              onFocus={() => setShowCustomerDropdown(true)}
+                              onChange={e => {
+                                setReceiptForm(prev => ({ ...prev, customerName: e.target.value }));
+                                setShowCustomerDropdown(true);
+                              }} 
+                              onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                              className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
+                            />
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Phone</label>
-                            <input type="text" placeholder="e.g. 9819169632" value={receiptForm.customerPhone} onChange={e => setReceiptForm(prev => ({ ...prev, customerPhone: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                            <input 
+                              type="text" 
+                              placeholder="e.g. 9819169632" 
+                              value={receiptForm.customerPhone} 
+                              onFocus={() => setShowCustomerDropdown(true)}
+                              onChange={e => {
+                                setReceiptForm(prev => ({ ...prev, customerPhone: e.target.value }));
+                                setShowCustomerDropdown(true);
+                              }} 
+                              onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                              className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
+                            />
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Email ID (Optional)</label>
-                            <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                            <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Instagram Handle (Optional)</label>
-                            <input type="text" placeholder="e.g. @diecast_collector" value={receiptForm.customerInsta} onChange={e => setReceiptForm(prev => ({ ...prev, customerInsta: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                            <input type="text" placeholder="e.g. @diecast_collector" value={receiptForm.customerInsta} onChange={e => setReceiptForm(prev => ({ ...prev, customerInsta: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Address (Optional)</label>
-                          <textarea rows={3} placeholder="Full shipping address..." value={receiptForm.customerAddress} onChange={e => setReceiptForm(prev => ({ ...prev, customerAddress: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
+                          <textarea rows={3} placeholder="Full shipping address..." value={receiptForm.customerAddress} onChange={e => setReceiptForm(prev => ({ ...prev, customerAddress: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                         </div>
                       </div>
 
@@ -2032,13 +2189,54 @@ export default function Admin() {
                                 setReceiptForm(prev => ({ ...prev, items: newItems }));
                               }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-center text-white focus:outline-none" />
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 relative">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Description</label>
-                              <input type="text" placeholder="e.g. Mini GT F1 - 999" value={item.description} onChange={e => {
-                                const newItems = [...receiptForm.items];
-                                newItems[index].description = e.target.value;
-                                setReceiptForm(prev => ({ ...prev, items: newItems }));
-                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                              <input 
+                                type="text" 
+                                placeholder="e.g. Mini GT F1 - 999" 
+                                value={item.description} 
+                                onFocus={() => setActiveProductDropdownIndex(index)}
+                                onChange={e => {
+                                  const newItems = [...receiptForm.items];
+                                  newItems[index].description = e.target.value;
+                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                  setActiveProductDropdownIndex(index);
+                                }} 
+                                onBlur={() => setTimeout(() => setActiveProductDropdownIndex(null), 200)}
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
+                              />
+
+                              {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN */}
+                              {activeProductDropdownIndex === index && getProductMatches(item.description).length > 0 && (
+                                <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.9)] overflow-hidden max-h-48 overflow-y-auto divide-y divide-white/10">
+                                  {getProductMatches(item.description).map((prod, pIdx) => (
+                                    <div 
+                                      key={pIdx}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const newItems = [...receiptForm.items];
+                                        newItems[index] = {
+                                          qty: newItems[index].qty || 1,
+                                          description: prod.description,
+                                          amount: prod.amount || newItems[index].amount
+                                        };
+                                        setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                        setActiveProductDropdownIndex(null);
+                                      }}
+                                      className="p-2.5 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group text-xs text-white"
+                                    >
+                                      <div className="font-medium truncate pr-2 group-hover:text-blue-300">
+                                        {prod.description}
+                                      </div>
+                                      {prod.amount && (
+                                        <div className="font-mono text-emerald-400 font-bold shrink-0 text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                          ₹{Number(prod.amount).toLocaleString('en-IN')}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <div className="w-28">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
