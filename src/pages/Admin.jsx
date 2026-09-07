@@ -2026,7 +2026,7 @@ export default function Admin() {
                         </div>
                       </div>
 
-                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4 relative">
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
                         <div className="flex justify-between items-center">
                           <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Customer Details</h3>
                           {customerMatches.length > 0 && (
@@ -2036,47 +2036,9 @@ export default function Admin() {
                           )}
                         </div>
 
-                        {/* FLOATING CUSTOMER AUTOCOMPLETE DROPDOWN */}
-                        {showCustomerDropdown && customerMatches.length > 0 && (
-                          <div className="absolute top-12 left-4 right-4 z-40 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10">
-                            <div className="px-3 py-1.5 bg-blue-500/15 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center">
-                              <span>Click customer to auto-fill details</span>
-                              <button type="button" onClick={() => setShowCustomerDropdown(false)} className="text-white/40 hover:text-white"><X size={12} /></button>
-                            </div>
-                            {customerMatches.map((cust, idx) => (
-                              <div 
-                                key={idx}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleSelectCustomerSuggestion(cust);
-                                }}
-                                className="p-3 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-300 font-bold text-xs flex items-center justify-center border border-blue-500/30 shrink-0">
-                                    {cust.customerName ? cust.customerName[0].toUpperCase() : '👤'}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors flex items-center gap-2">
-                                      <span className="truncate">{cust.customerName.length > 22 ? cust.customerName.slice(0, 20) + '...' : cust.customerName}</span>
-                                      <span className="text-white/40 font-normal">-</span>
-                                      <span className="font-mono text-blue-400 font-semibold shrink-0">{cust.customerPhone || 'No Phone'}</span>
-                                    </div>
-                                    {(cust.customerEmail || cust.customerInsta) && (
-                                      <div className="text-[10px] text-white/50 truncate mt-0.5">
-                                        {cust.customerEmail} {cust.customerEmail && cust.customerInsta ? '•' : ''} {cust.customerInsta}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <span className="text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">Auto-fill ↵</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
+                          {/* Customer Name Field */}
+                          <div className="relative">
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Name *</label>
                             <input 
                               type="text" 
@@ -2090,8 +2052,44 @@ export default function Admin() {
                               onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                               className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
                             />
+
+                            {/* CUSTOMER AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box) */}
+                            {showCustomerDropdown && customerMatches.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10">
+                                <div className="px-3 py-1.5 bg-blue-500/15 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center">
+                                  <span>Click customer to auto-fill</span>
+                                  <button type="button" onClick={() => setShowCustomerDropdown(false)} className="text-white/40 hover:text-white"><X size={12} /></button>
+                                </div>
+                                {customerMatches.map((cust, idx) => (
+                                  <div 
+                                    key={idx}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      handleSelectCustomerSuggestion(cust);
+                                    }}
+                                    className="p-3 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-300 font-bold text-xs flex items-center justify-center border border-blue-500/30 shrink-0">
+                                        {cust.customerName ? cust.customerName[0].toUpperCase() : '👤'}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors flex items-center gap-1.5">
+                                          <span className="truncate">{cust.customerName.length > 18 ? cust.customerName.slice(0, 16) + '...' : cust.customerName}</span>
+                                          <span className="text-white/40 font-normal">-</span>
+                                          <span className="font-mono text-blue-400 font-semibold shrink-0">{cust.customerPhone || 'No Phone'}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 shrink-0">Auto-fill ↵</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div>
+
+                          {/* Customer Phone Field */}
+                          <div className="relative">
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Phone</label>
                             <input 
                               type="text" 
@@ -2106,6 +2104,7 @@ export default function Admin() {
                               className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
                             />
                           </div>
+
                           <div>
                             <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Email ID (Optional)</label>
                             <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
@@ -2189,54 +2188,56 @@ export default function Admin() {
                                 setReceiptForm(prev => ({ ...prev, items: newItems }));
                               }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-center text-white focus:outline-none" />
                             </div>
-                            <div className="flex-1 relative">
+                            <div className="flex-1">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Description</label>
-                              <input 
-                                type="text" 
-                                placeholder="e.g. Mini GT F1 - 999" 
-                                value={item.description} 
-                                onFocus={() => setActiveProductDropdownIndex(index)}
-                                onChange={e => {
-                                  const newItems = [...receiptForm.items];
-                                  newItems[index].description = e.target.value;
-                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
-                                  setActiveProductDropdownIndex(index);
-                                }} 
-                                onBlur={() => setTimeout(() => setActiveProductDropdownIndex(null), 200)}
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
-                              />
+                              <div className="relative">
+                                <input 
+                                  type="text" 
+                                  placeholder="e.g. Mini GT F1 - 999" 
+                                  value={item.description} 
+                                  onFocus={() => setActiveProductDropdownIndex(index)}
+                                  onChange={e => {
+                                    const newItems = [...receiptForm.items];
+                                    newItems[index].description = e.target.value;
+                                    setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                    setActiveProductDropdownIndex(index);
+                                  }} 
+                                  onBlur={() => setTimeout(() => setActiveProductDropdownIndex(null), 200)}
+                                  className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
+                                />
 
-                              {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN */}
-                              {activeProductDropdownIndex === index && getProductMatches(item.description).length > 0 && (
-                                <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.9)] overflow-hidden max-h-48 overflow-y-auto divide-y divide-white/10">
-                                  {getProductMatches(item.description).map((prod, pIdx) => (
-                                    <div 
-                                      key={pIdx}
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        const newItems = [...receiptForm.items];
-                                        newItems[index] = {
-                                          qty: newItems[index].qty || 1,
-                                          description: prod.description,
-                                          amount: prod.amount || newItems[index].amount
-                                        };
-                                        setReceiptForm(prev => ({ ...prev, items: newItems }));
-                                        setActiveProductDropdownIndex(null);
-                                      }}
-                                      className="p-2.5 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group text-xs text-white"
-                                    >
-                                      <div className="font-medium truncate pr-2 group-hover:text-blue-300">
-                                        {prod.description}
-                                      </div>
-                                      {prod.amount && (
-                                        <div className="font-mono text-emerald-400 font-bold shrink-0 text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                          ₹{Number(prod.amount).toLocaleString('en-IN')}
+                                {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box) */}
+                                {activeProductDropdownIndex === index && getProductMatches(item.description).length > 0 && (
+                                  <div className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-48 overflow-y-auto divide-y divide-white/10">
+                                    {getProductMatches(item.description).map((prod, pIdx) => (
+                                      <div 
+                                        key={pIdx}
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          const newItems = [...receiptForm.items];
+                                          newItems[index] = {
+                                            qty: newItems[index].qty || 1,
+                                            description: prod.description,
+                                            amount: prod.amount || newItems[index].amount
+                                          };
+                                          setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                          setActiveProductDropdownIndex(null);
+                                        }}
+                                        className="p-2.5 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group text-xs text-white"
+                                      >
+                                        <div className="font-medium truncate pr-2 group-hover:text-blue-300">
+                                          {prod.description}
                                         </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                        {prod.amount && (
+                                          <div className="font-mono text-emerald-400 font-bold shrink-0 text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                            ₹{Number(prod.amount).toLocaleString('en-IN')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="w-28">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
