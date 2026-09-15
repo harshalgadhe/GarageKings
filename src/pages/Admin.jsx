@@ -425,6 +425,7 @@ export default function Admin() {
     instructions: ''
   })
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
+  const [silentExportReceipt, setSilentExportReceipt] = useState(null)
   const [isExportingReceipt, setIsExportingReceipt] = useState(false)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
@@ -928,17 +929,18 @@ export default function Admin() {
     if (!receipt) return;
     
     let element = document.getElementById('receipt-modal-card');
-    let wasOpenedForExport = false;
+    let isSilent = false;
 
     if (!element) {
-      setActiveReceiptPreview(receipt);
-      wasOpenedForExport = true;
-      await new Promise(r => setTimeout(r, 250));
-      element = document.getElementById('receipt-modal-card');
+      setSilentExportReceipt(receipt);
+      isSilent = true;
+      await new Promise(r => setTimeout(r, 120));
+      element = document.getElementById('silent-receipt-export-card');
     }
     
     if (!element) {
-      alert("Unable to generate JPG image. Please open receipt details.");
+      alert("Unable to generate JPG image.");
+      setSilentExportReceipt(null);
       return;
     }
     
@@ -962,8 +964,8 @@ export default function Admin() {
       alert('Failed to download JPG image: ' + err.message);
     } finally {
       setIsExportingReceipt(false);
-      if (wasOpenedForExport) {
-        setActiveReceiptPreview(null);
+      if (isSilent) {
+        setSilentExportReceipt(null);
       }
     }
   };
@@ -975,17 +977,18 @@ export default function Admin() {
     if (!receipt) return;
     
     let element = document.getElementById('receipt-modal-card');
-    let wasOpenedForExport = false;
+    let isSilent = false;
 
     if (!element) {
-      setActiveReceiptPreview(receipt);
-      wasOpenedForExport = true;
-      await new Promise(r => setTimeout(r, 250));
-      element = document.getElementById('receipt-modal-card');
+      setSilentExportReceipt(receipt);
+      isSilent = true;
+      await new Promise(r => setTimeout(r, 120));
+      element = document.getElementById('silent-receipt-export-card');
     }
     
     if (!element) {
-      alert("Unable to generate PDF. Please open receipt details.");
+      alert("Unable to generate PDF.");
+      setSilentExportReceipt(null);
       return;
     }
 
@@ -1014,8 +1017,8 @@ export default function Admin() {
       alert('Failed to download PDF: ' + err.message);
     } finally {
       setIsExportingReceipt(false);
-      if (wasOpenedForExport) {
-        setActiveReceiptPreview(null);
+      if (isSilent) {
+        setSilentExportReceipt(null);
       }
     }
   };
@@ -3193,6 +3196,140 @@ export default function Admin() {
           </div>
         )}
       </AnimatePresence>
+      {/* Off-screen hidden receipt container for silent background JPG/PDF exports */}
+      {silentExportReceipt && createPortal(
+        <div 
+          id="silent-receipt-export-card" 
+          style={{ 
+            position: 'fixed', 
+            left: '-9999px', 
+            top: '0', 
+            width: '800px', 
+            backgroundColor: '#ffffff', 
+            color: '#000000', 
+            padding: '32px',
+            fontFamily: 'system-ui, sans-serif',
+            boxSizing: 'border-box'
+          }} 
+          className="relative overflow-hidden flex flex-col justify-between"
+        >
+          {/* Faint Premium Brand Watermark */}
+          <div className="absolute pointer-events-none select-none z-0 text-center" style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%) rotate(-25deg)',
+            fontSize: '70px',
+            fontWeight: '900',
+            letterSpacing: '0.25em',
+            color: 'rgba(43, 149, 201, 0.085)',
+            width: '90%',
+            textAlign: 'center',
+            lineHeight: '1.2',
+            fontFamily: '"Outfit", "Montserrat", "Inter", system-ui, sans-serif',
+            textTransform: 'uppercase',
+            wordBreak: 'break-word'
+          }}>
+            {silentExportReceipt.companyName || 'Garage Kings'}
+          </div>
+
+          <div className="relative z-10 flex flex-col justify-between h-full w-full">
+            <div>
+              {/* Header */}
+              <div className="flex justify-between items-start gap-4 mb-8">
+                <div>
+                  <h1 className="text-3xl font-black leading-tight tracking-tight" style={{ fontSize: '28px', fontWeight: '900', fontFamily: 'system-ui, sans-serif', color: '#000000', margin: 0 }}>{silentExportReceipt.companyName || 'Garage Kings India'}</h1>
+                  <p className="text-gray-600 text-sm" style={{ fontSize: '14px', margin: '6px 0 0 0', color: '#4b5563' }}>{silentExportReceipt.companyLocation || 'Delhi'}</p>
+                </div>
+                <div className="text-right">
+                  <h2 className="text-3xl font-black text-gray-800 tracking-tight leading-none mb-1" style={{ fontSize: '28px', fontWeight: '900', margin: '0 0 4px 0', color: '#1f2937' }}>Receipt</h2>
+                  <p className="text-sm text-gray-600 font-semibold" style={{ fontSize: '12px', margin: 0, color: '#4b5563' }}>Receipt # &nbsp;{silentExportReceipt.receiptNumber}</p>
+                  <p className="text-xs text-gray-500 font-medium mt-1" style={{ fontSize: '11px', margin: '4px 0 0 0', color: '#6b7280' }}>Date &nbsp;{silentExportReceipt.dateString}</p>
+                </div>
+              </div>
+
+              {/* "To" Section */}
+              <div className="mb-8" style={{ marginTop: '30px', marginBottom: '30px' }}>
+                <div className="bg-[#2b95c9] text-white px-4 py-1.5 font-bold text-xs tracking-wider mb-3 rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '6px 12px', letterSpacing: '0.05em' }}>To</div>
+                <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
+                  <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{silentExportReceipt.customerName}</div>
+                  {silentExportReceipt.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{silentExportReceipt.customerPhone}</div>}
+                  {silentExportReceipt.customerEmail && <div className="font-medium text-gray-600" style={{ fontWeight: '500', color: '#4b5563' }}>{silentExportReceipt.customerEmail}</div>}
+                  {silentExportReceipt.customerInsta && <div className="font-medium text-blue-600" style={{ fontWeight: '500', color: '#2563eb' }}>{silentExportReceipt.customerInsta.startsWith('@') ? silentExportReceipt.customerInsta : `@${silentExportReceipt.customerInsta}`}</div>}
+                  {silentExportReceipt.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{silentExportReceipt.customerAddress}</div>}
+                </div>
+              </div>
+
+              {/* Table Section */}
+              <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
+                <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em' }}>
+                  <div className="col-span-2 text-center">Qty</div>
+                  <div className="col-span-7">Description</div>
+                  <div className="col-span-3 text-right">Amount</div>
+                </div>
+                
+                <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                  {silentExportReceipt.items?.map((it, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
+                      <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>{it.qty}</div>
+                      <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>{it.description}</div>
+                      <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                  ))}
+                  
+                  {silentExportReceipt.includeShipping && (
+                    <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
+                      <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>1</div>
+                      <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>Shipping Charges</div>
+                      <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(silentExportReceipt.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Totals Section */}
+            <div style={{ marginTop: '40px' }}>
+              <div className="pt-4 space-y-2 text-right flex flex-col items-end" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingTop: '16px' }}>
+                <div className="flex justify-between items-center text-xs text-gray-600 w-80" style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#4b5563' }}>
+                  <span>Including Tax ({silentExportReceipt.taxPercent}%)</span>
+                  <span className="font-mono font-semibold" style={{ fontFamily: 'monospace', fontWeight: '600' }}>₹{Number(silentExportReceipt.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-black text-black pt-2 w-80" style={{ borderTop: '1px solid #d1d5db', marginTop: '6px', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', width: '340px', color: '#000000', paddingTop: '8px' }}>
+                  <span>Total Paid</span>
+                  <span className="font-mono font-black text-xl" style={{ fontSize: '18px', fontWeight: '900', fontFamily: 'monospace' }}>₹{Number(silentExportReceipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                {silentExportReceipt.formatType === 'prebooking' && (silentExportReceipt.showExcludingShipping !== false || (silentExportReceipt.pendingBalance !== undefined && Number(silentExportReceipt.pendingBalance) > 0)) && (
+                  <div className="flex justify-between items-start text-xs text-red-600 font-bold pt-2 w-80 gap-3" style={{ borderTop: '1px dashed #d1d5db', marginTop: '6px', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '340px', color: '#dc2626', paddingTop: '6px' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div>Balance Due before Delivery</div>
+                      {silentExportReceipt.showExcludingShipping !== false && (
+                        <div style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '500', marginTop: '1px' }}>(Excluding shipping)</div>
+                      )}
+                    </div>
+                    <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'right', flexShrink: 0 }}>₹{Number(silentExportReceipt.pendingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Special Instructions */}
+              {(silentExportReceipt.instructions || silentExportReceipt.instruction) && (
+                <div className="mt-4 pt-2 text-left text-xs text-gray-700" style={{ borderTop: '1px dashed #d1d5db', marginTop: '16px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                  <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>Instructions: </span>
+                  <span>{silentExportReceipt.instructions || silentExportReceipt.instruction}</span>
+                </div>
+              )}
+
+              {/* Footer refund policy statement */}
+              {silentExportReceipt.footerNote && (
+                <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '40px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
+                  {silentExportReceipt.footerNote}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
