@@ -82,7 +82,10 @@ const exportReceiptsToExcel = (receiptsList, groupBy = 'format', filterType = 'a
       r.customerPhone?.toLowerCase().includes(s) || 
       r.receiptNumber?.toLowerCase().includes(s) ||
       r.customerEmail?.toLowerCase().includes(s) ||
-      r.customerInsta?.toLowerCase().includes(s)
+      r.customerInsta?.toLowerCase().includes(s) ||
+      r.instructions?.toLowerCase().includes(s) ||
+      r.customerAddress?.toLowerCase().includes(s) ||
+      r.items?.some(it => it.description?.toLowerCase().includes(s))
     );
   }
 
@@ -106,6 +109,7 @@ const exportReceiptsToExcel = (receiptsList, groupBy = 'format', filterType = 'a
     'Shipping (₹)': Number(r.shippingCharges || 0),
     'Total Amount Paid (₹)': Number(r.totalAmount || 0),
     'Pending Balance Due (₹)': Number(r.pendingBalance || 0),
+    'Instructions': r.instructions || r.instruction || '',
     'Shipping Address': r.customerAddress || '',
     'Company': r.companyName || 'Garage Kings India',
     'Created At (DB)': r.createdAt || ''
@@ -415,7 +419,8 @@ export default function Admin() {
     taxPercent: 0,
     footerNote: 'In the event that the order cannot be fulfilled from our end, a full refund will be issued.',
     pendingBalance: '',
-    showExcludingShipping: true
+    showExcludingShipping: true,
+    instructions: ''
   })
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
@@ -810,13 +815,14 @@ export default function Admin() {
       taxPercent: receipt.taxPercent !== undefined ? receipt.taxPercent : 0,
       footerNote: receipt.footerNote !== undefined ? receipt.footerNote : '',
       pendingBalance: receipt.pendingBalance !== undefined ? String(receipt.pendingBalance) : '',
-      showExcludingShipping: receipt.showExcludingShipping !== undefined ? receipt.showExcludingShipping : (receipt.formatType === 'prebooking')
+      showExcludingShipping: receipt.showExcludingShipping !== undefined ? receipt.showExcludingShipping : (receipt.formatType === 'prebooking'),
+      instructions: receipt.instructions || receipt.instruction || ''
     });
     setIsAddingReceipt(true);
   }
 
   const handleSaveReceipt = async () => {
-    const { receiptNumber, customerName, customerPhone, items, formatType, footerNote, companyName, companyLocation, pendingBalance } = receiptForm;
+    const { receiptNumber, customerName, customerPhone, items, formatType, footerNote, companyName, companyLocation, pendingBalance, instructions } = receiptForm;
     if (!receiptNumber.trim()) return alert("Receipt Number is required");
     if (!customerName.trim()) return alert("Customer Name is required");
     if (!companyName.trim()) return alert("Company Name is required");
@@ -857,6 +863,7 @@ export default function Admin() {
         totalAmount,
         pendingBalance: pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined ? Number(pendingBalance) : 0,
         showExcludingShipping: receiptForm.showExcludingShipping !== false,
+        instructions: instructions ? instructions.trim() : '',
         footerNote: footerNote.trim()
       };
 
@@ -2339,9 +2346,15 @@ export default function Admin() {
                         )}
                       </div>
 
-                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl">
-                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Footer Refund / Payment Note</label>
-                        <textarea rows={2} value={receiptForm.footerNote} onChange={e => setReceiptForm(prev => ({ ...prev, footerNote: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Custom note to appear at the bottom of the receipt..." />
+                      <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Special Instructions / Notes (Optional)</label>
+                          <input type="text" value={receiptForm.instructions} onChange={e => setReceiptForm(prev => ({ ...prev, instructions: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="e.g. Deliver on weekday, handle with care, gift packaging..." />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Footer Refund / Payment Note</label>
+                          <textarea rows={2} value={receiptForm.footerNote} onChange={e => setReceiptForm(prev => ({ ...prev, footerNote: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Custom note to appear at the bottom of the receipt..." />
+                        </div>
                       </div>
 
                       <div className="flex justify-end gap-3 pt-3">
@@ -2477,9 +2490,17 @@ export default function Admin() {
                             )}
                           </div>
 
+                          {/* Special Instructions */}
+                          {receiptForm.instructions && (
+                            <div className="mt-4 pt-2 border-t border-dashed border-gray-300 text-left text-[10px] text-gray-700">
+                              <span className="font-bold text-black uppercase tracking-wider">Instructions: </span>
+                              <span>{receiptForm.instructions}</span>
+                            </div>
+                          )}
+
                           {/* Footer refund policy statement */}
                           {receiptForm.footerNote && (
-                            <div className="mt-8 text-center text-[9px] text-gray-800 font-medium leading-normal px-2">
+                            <div className="mt-6 text-center text-[9px] text-gray-800 font-medium leading-normal px-2">
                               {receiptForm.footerNote}
                             </div>
                           )}
@@ -2510,7 +2531,7 @@ export default function Admin() {
                 </button>
                 <input 
                   type="text" 
-                  placeholder="Search customer, phone, email, @insta, or RT#..." 
+                  placeholder="Search customer, phone, car/product name, email, @insta, or RT#..." 
                   value={receiptSearch} 
                   onChange={e => { setReceiptSearch(e.target.value); setReceiptPage(1); }} 
                   className="bg-black/50 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 w-full md:w-80" 
@@ -2526,12 +2547,16 @@ export default function Admin() {
               </div>
             ) : (() => {
               const filteredReceipts = receipts.filter(r => {
-                const search = receiptSearch.toLowerCase();
+                const search = receiptSearch.trim().toLowerCase();
+                if (!search) return true;
                 return r.customerName?.toLowerCase().includes(search) || 
                        r.customerPhone?.toLowerCase().includes(search) || 
                        r.receiptNumber?.toLowerCase().includes(search) ||
                        r.customerEmail?.toLowerCase().includes(search) ||
-                       r.customerInsta?.toLowerCase().includes(search);
+                       r.customerInsta?.toLowerCase().includes(search) ||
+                       r.instructions?.toLowerCase().includes(search) ||
+                       r.customerAddress?.toLowerCase().includes(search) ||
+                       r.items?.some(it => it.description?.toLowerCase().includes(search));
               });
               const totalReceiptPages = Math.ceil(filteredReceipts.length / RECEIPTS_PER_PAGE) || 1;
               const paginatedReceipts = filteredReceipts.slice((receiptPage - 1) * RECEIPTS_PER_PAGE, receiptPage * RECEIPTS_PER_PAGE);
@@ -2557,8 +2582,22 @@ export default function Admin() {
                             {receipt.customerEmail && <span className="text-blue-300 font-mono text-[11px]">{receipt.customerEmail}</span>}
                             {receipt.customerInsta && <span className="text-purple-300 font-mono text-[11px]">{receipt.customerInsta.startsWith('@') ? receipt.customerInsta : `@${receipt.customerInsta}`}</span>}
                           </div>
-                          <div className="text-[10px] text-white/35 mt-1 truncate">
-                            {receipt.items?.map(it => `${it.qty}x ${it.description}`).join(', ')}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {receipt.items?.map((it, idx) => {
+                              const isMatch = receiptSearch.trim() && it.description?.toLowerCase().includes(receiptSearch.trim().toLowerCase());
+                              return (
+                                <span 
+                                  key={idx} 
+                                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    isMatch 
+                                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 font-bold' 
+                                      : 'bg-white/5 text-white/50'
+                                  }`}
+                                >
+                                  {it.qty}x {it.description}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                         <div className="col-span-2">
@@ -2735,9 +2774,17 @@ export default function Admin() {
                       )}
                     </div>
 
+                    {/* Special Instructions */}
+                    {(activeReceiptPreview.instructions || activeReceiptPreview.instruction) && (
+                      <div className="mt-4 pt-2 text-left text-xs text-gray-700" style={{ borderTop: '1px dashed #d1d5db', marginTop: '16px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                        <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>Instructions: </span>
+                        <span>{activeReceiptPreview.instructions || activeReceiptPreview.instruction}</span>
+                      </div>
+                    )}
+
                     {/* Footer refund policy statement */}
                     {activeReceiptPreview.footerNote && (
-                      <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '60px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
+                      <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '40px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
                         {activeReceiptPreview.footerNote}
                       </div>
                     )}
@@ -2856,9 +2903,17 @@ export default function Admin() {
               )}
             </div>
 
+            {/* Special Instructions */}
+            {(activeReceiptPreview.instructions || activeReceiptPreview.instruction) && (
+              <div className="mt-4 pt-2 text-left text-xs text-gray-700" style={{ borderTop: '1px dashed #d1d5db', marginTop: '16px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>Instructions: </span>
+                <span>{activeReceiptPreview.instructions || activeReceiptPreview.instruction}</span>
+              </div>
+            )}
+
             {/* Footer refund policy statement */}
             {activeReceiptPreview.footerNote && (
-              <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '80px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
+              <div className="text-center text-xs text-gray-800 font-medium leading-normal px-4" style={{ marginTop: '50px', fontSize: '11.5px', textAlign: 'center', color: '#374151', paddingLeft: '16px', paddingRight: '16px', lineHeight: '1.6' }}>
                 {activeReceiptPreview.footerNote}
               </div>
             )}
