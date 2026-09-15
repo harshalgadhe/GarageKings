@@ -449,6 +449,49 @@ export default function Admin() {
     setDraggedItemIndex(null);
   };
 
+  const updateItemField = (index, field, value) => {
+    setReceiptForm(prev => {
+      const newItems = [...prev.items];
+      const item = { ...newItems[index], [field]: value };
+
+      const q = Math.max(1, parseInt(item.qty) || 1);
+      const uPrice = item.unitPrice !== undefined && item.unitPrice !== '' && item.unitPrice !== null ? parseFloat(item.unitPrice) : null;
+      const paid = item.amount !== undefined && item.amount !== '' ? parseFloat(item.amount) : 0;
+
+      if (field === 'unitPrice' || field === 'amount' || field === 'qty') {
+        if (uPrice !== null && !isNaN(uPrice)) {
+          item.pendingBalance = String(Math.max(0, (uPrice * q) - paid));
+        }
+      }
+
+      newItems[index] = item;
+
+      // Calculate sum of item pendings
+      let sumItemPendings = 0;
+      let hasItemizedPending = false;
+      newItems.forEach(it => {
+        const itQ = Math.max(1, parseInt(it.qty) || 1);
+        const itUPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? parseFloat(it.unitPrice) : null;
+        const itPaid = it.amount !== undefined && it.amount !== '' ? parseFloat(it.amount) : 0;
+        
+        if (it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null) {
+          sumItemPendings += parseFloat(it.pendingBalance) || 0;
+          hasItemizedPending = true;
+        } else if (itUPrice !== null && !isNaN(itUPrice)) {
+          const p = Math.max(0, (itUPrice * itQ) - itPaid);
+          sumItemPendings += p;
+          hasItemizedPending = true;
+        }
+      });
+
+      return {
+        ...prev,
+        items: newItems,
+        pendingBalance: hasItemizedPending ? String(sumItemPendings) : prev.pendingBalance
+      };
+    });
+  };
+
   const handleCopyText = (text, fieldId) => {
     if (!text) return;
     try {
@@ -462,7 +505,24 @@ export default function Admin() {
 
   const handleCopyReceiptSummary = (receipt) => {
     if (!receipt) return;
-    const itemsText = receipt.items?.map(it => `• ${it.qty}x ${it.description} (₹${Number(it.amount).toLocaleString('en-IN')})`).join('\n') || '';
+    let totalQty = 0;
+    const itemsText = receipt.items?.map(it => {
+      const q = Math.max(1, Number(it.qty) || 1);
+      totalQty += q;
+      const paid = Number(it.amount) || 0;
+      const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+      const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+        ? Number(it.pendingBalance) 
+        : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+
+      let line = `• ${q}x ${it.description} (Paid: ₹${paid.toLocaleString('en-IN')})`;
+      if (unitP !== null || pend > 0) {
+        const pendPerUnit = q > 1 && pend > 0 ? ` [₹${(pend / q).toLocaleString('en-IN')}/unit pending]` : '';
+        line += `\n  └ Unit: ₹${(unitP || paid).toLocaleString('en-IN')} | Pending: ₹${pend.toLocaleString('en-IN')}${pendPerUnit}`;
+      }
+      return line;
+    }).join('\n') || '';
+
     const textLines = [
       `🧾 RECEIPT - ${receipt.receiptNumber}`,
       `Date: ${receipt.dateString}`,
@@ -471,7 +531,7 @@ export default function Admin() {
       receipt.customerEmail ? `Email: ${receipt.customerEmail}` : null,
       receipt.customerInsta ? `Insta: ${receipt.customerInsta}` : null,
       receipt.customerAddress ? `Address:\n${receipt.customerAddress}` : null,
-      itemsText ? `\nItems:\n${itemsText}` : null,
+      itemsText ? `\nItems (${totalQty} units total):\n${itemsText}` : null,
       `Total Paid: ₹${Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
       receipt.pendingBalance > 0 ? `Balance Due: ₹${Number(receipt.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : null,
       (receipt.instructions || receipt.instruction) ? `Instructions: ${receipt.instructions || receipt.instruction}` : null
@@ -894,7 +954,13 @@ export default function Admin() {
       customerInsta: receipt.customerInsta || '',
       customerAddress: receipt.customerAddress || '',
       formatType: receipt.formatType || 'standard',
-      items: receipt.items && receipt.items.length > 0 ? receipt.items.map(it => ({ qty: it.qty, description: it.description, amount: String(it.amount) })) : [{ qty: 1, description: '', amount: '' }],
+      items: receipt.items && receipt.items.length > 0 ? receipt.items.map(it => ({ 
+        qty: it.qty || 1, 
+        description: it.description || '', 
+        unitPrice: it.unitPrice !== undefined && it.unitPrice !== null ? String(it.unitPrice) : '',
+        amount: String(it.amount || ''),
+        pendingBalance: it.pendingBalance !== undefined && it.pendingBalance !== null ? String(it.pendingBalance) : ''
+      })) : [{ qty: 1, description: '', unitPrice: '', amount: '', pendingBalance: '' }],
       shippingCharges: receipt.shippingCharges !== undefined ? receipt.shippingCharges : 150,
       includeShipping: receipt.includeShipping !== undefined ? receipt.includeShipping : true,
       taxPercent: receipt.taxPercent !== undefined ? receipt.taxPercent : 0,
@@ -918,7 +984,7 @@ export default function Admin() {
 
     try {
       // Calculate totals
-      const subtotal = items.reduce((acc, it) => acc + (Number(it.qty) * Number(it.amount)), 0);
+      const subtotal = items.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
       const shipping = receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0;
       const taxRate = Number(receiptForm.taxPercent) / 100;
       const taxAmount = (subtotal + shipping) * taxRate;
@@ -927,6 +993,35 @@ export default function Admin() {
       const dateToUse = receiptForm.calendarDate ? new Date(receiptForm.calendarDate) : parseReceiptDate({ dateString: receiptForm.dateString });
       const finalDateString = formatReceiptDate(dateToUse);
       const computedReceiptDate = dateToUse.toISOString();
+
+      let calculatedPending = pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined ? Number(pendingBalance) : 0;
+      let sumItemPendings = 0;
+      let hasItemizedPending = false;
+
+      const formattedItems = items.map(it => {
+        const q = Math.max(1, Number(it.qty) || 1);
+        const paid = Number(it.amount) || 0;
+        const uPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? Number(it.unitPrice) : null;
+        let pend = it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null ? Number(it.pendingBalance) : null;
+        if (pend === null && uPrice !== null) {
+          pend = Math.max(0, (uPrice * q) - paid);
+        }
+        if (pend !== null && pend > 0) {
+          sumItemPendings += pend;
+          hasItemizedPending = true;
+        }
+        return {
+          qty: q,
+          description: it.description.trim(),
+          unitPrice: uPrice,
+          amount: paid,
+          pendingBalance: pend
+        };
+      });
+
+      if ((calculatedPending === 0 || !pendingBalance) && hasItemizedPending) {
+        calculatedPending = sumItemPendings;
+      }
 
       const receiptData = {
         receiptNumber: receiptForm.receiptNumber.trim(),
@@ -940,13 +1035,13 @@ export default function Admin() {
         customerInsta: receiptForm.customerInsta ? receiptForm.customerInsta.trim() : '',
         customerAddress: receiptForm.customerAddress.trim(),
         formatType,
-        items: items.map(it => ({ qty: Number(it.qty), description: it.description.trim(), amount: Number(it.amount) })),
+        items: formattedItems,
         includeShipping: receiptForm.includeShipping,
         shippingCharges: shipping,
         taxPercent: Number(receiptForm.taxPercent),
         taxAmount,
         totalAmount,
-        pendingBalance: pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined ? Number(pendingBalance) : 0,
+        pendingBalance: calculatedPending,
         showExcludingShipping: receiptForm.showExcludingShipping !== false,
         instructions: instructions ? instructions.trim() : '',
         footerNote: footerNote.trim()
@@ -2454,7 +2549,13 @@ export default function Admin() {
                                 if (!e.target.value) return;
                                 const car = cars.find(c => c.id === e.target.value);
                                 if (car) {
-                                  const newItem = { qty: 1, description: `${car.brand} ${car.name}${car.grade ? ' - ' + car.grade : ''}`, amount: String(car.price) };
+                                  const newItem = { 
+                                    qty: 1, 
+                                    description: `${car.brand} ${car.name}${car.grade ? ' - ' + car.grade : ''}`, 
+                                    unitPrice: String(car.price),
+                                    amount: String(car.price),
+                                    pendingBalance: '0'
+                                  };
                                   setReceiptForm(prev => {
                                     const first = prev.items[0];
                                     const isEmpty = prev.items.length === 1 && !first.description && !first.amount;
@@ -2479,7 +2580,13 @@ export default function Admin() {
                                 if (!e.target.value) return;
                                 const auction = auctions.find(a => a.id === e.target.value);
                                 if (auction) {
-                                  const newItem = { qty: 1, description: `${auction.brand} ${auction.title}${auction.grade ? ' - ' + auction.grade : ''}`, amount: String(auction.startingPrice) };
+                                  const newItem = { 
+                                    qty: 1, 
+                                    description: `${auction.brand} ${auction.title}${auction.grade ? ' - ' + auction.grade : ''}`, 
+                                    unitPrice: String(auction.startingPrice),
+                                    amount: String(auction.startingPrice),
+                                    pendingBalance: '0'
+                                  };
                                   setReceiptForm(prev => {
                                     const first = prev.items[0];
                                     const isEmpty = prev.items.length === 1 && !first.description && !first.amount;
@@ -2519,7 +2626,7 @@ export default function Admin() {
                               handleDropItem(index);
                             }}
                             onDragEnd={() => setDraggedItemIndex(null)}
-                            className={`flex gap-2.5 items-center p-2.5 rounded-xl border transition-all ${
+                            className={`flex flex-wrap md:flex-nowrap gap-2 items-center p-2.5 rounded-xl border transition-all ${
                               draggedItemIndex === index 
                                 ? 'opacity-40 bg-blue-500/10 border-blue-500/40 border-dashed' 
                                 : 'bg-black/30 border-white/5 hover:border-white/10'
@@ -2536,23 +2643,19 @@ export default function Admin() {
                             </div>
 
                             {/* Qty Field */}
-                            <div className="w-16">
+                            <div className="w-14">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Qty</label>
                               <input 
                                 type="number" 
                                 min="1" 
                                 value={item.qty} 
-                                onChange={e => {
-                                  const newItems = [...receiptForm.items];
-                                  newItems[index].qty = Math.max(1, parseInt(e.target.value) || 1);
-                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
-                                }} 
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2.5 py-2 text-center text-white focus:outline-none" 
+                                onChange={e => updateItemField(index, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-center text-white focus:outline-none text-xs" 
                               />
                             </div>
 
                             {/* Description Field */}
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-[160px]">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Description</label>
                               <div className="relative">
                                 <input 
@@ -2560,14 +2663,9 @@ export default function Admin() {
                                   placeholder="e.g. Mini GT F1 - 999" 
                                   value={item.description} 
                                   onFocus={() => setActiveProductDropdownIndex(index)}
-                                  onChange={e => {
-                                    const newItems = [...receiptForm.items];
-                                    newItems[index].description = e.target.value;
-                                    setReceiptForm(prev => ({ ...prev, items: newItems }));
-                                    setActiveProductDropdownIndex(index);
-                                  }} 
+                                  onChange={e => updateItemField(index, 'description', e.target.value)} 
                                   onBlur={() => setTimeout(() => setActiveProductDropdownIndex(null), 200)}
-                                  className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
+                                  className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-xs" 
                                 />
 
                                 {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN */}
@@ -2585,7 +2683,9 @@ export default function Admin() {
                                           newItems[index] = {
                                             qty: newItems[index].qty || 1,
                                             description: prod.description,
-                                            amount: prod.amount || newItems[index].amount
+                                            unitPrice: prod.amount || newItems[index].unitPrice || '',
+                                            amount: prod.amount || newItems[index].amount || '',
+                                            pendingBalance: '0'
                                           };
                                           setReceiptForm(prev => ({ ...prev, items: newItems }));
                                           setActiveProductDropdownIndex(null);
@@ -2607,19 +2707,42 @@ export default function Admin() {
                               </div>
                             </div>
 
-                            {/* Amount Field */}
-                            <div className="w-28">
-                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
+                            {/* Unit Price Field (Full price per unit) */}
+                            <div className="w-24">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Unit Price (₹)</label>
+                              <input 
+                                type="number" 
+                                placeholder="5000" 
+                                value={item.unitPrice || ''} 
+                                onChange={e => updateItemField(index, 'unitPrice', e.target.value)} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-white focus:outline-none focus:border-blue-500 text-xs" 
+                                title="Full price per unit before deposit"
+                              />
+                            </div>
+
+                            {/* Amount Paid Field */}
+                            <div className="w-24">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Paid (₹)</label>
                               <input 
                                 type="number" 
                                 placeholder="2000" 
                                 value={item.amount} 
-                                onChange={e => {
-                                  const newItems = [...receiptForm.items];
-                                  newItems[index].amount = e.target.value;
-                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
-                                }} 
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-right text-white focus:outline-none focus:border-blue-500" 
+                                onChange={e => updateItemField(index, 'amount', e.target.value)} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-emerald-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
+                                title="Amount paid for this item"
+                              />
+                            </div>
+
+                            {/* Item Pending Field */}
+                            <div className="w-24">
+                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Pending (₹)</label>
+                              <input 
+                                type="number" 
+                                placeholder="0" 
+                                value={item.pendingBalance || ''} 
+                                onChange={e => updateItemField(index, 'pendingBalance', e.target.value)} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-red-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
+                                title="Item balance due before delivery"
                               />
                             </div>
 
@@ -2837,34 +2960,115 @@ export default function Admin() {
                           </div>
 
                           {/* Table Section */}
-                          <div className="mb-6">
-                            {/* Table Header */}
-                            <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-3 py-1.5 font-bold text-[9px] tracking-wider rounded-sm">
-                              <div className="col-span-2 text-center">Qty</div>
-                              <div className="col-span-7">Description</div>
-                              <div className="col-span-3 text-right">Amount</div>
-                            </div>
-                            
-                            {/* Table Rows */}
-                            <div className="divide-y divide-gray-150 px-1">
-                              {receiptForm.items.map((it, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
-                                  <div className="col-span-2 text-center text-gray-600">{it.qty}</div>
-                                  <div className="col-span-7 font-medium text-gray-800 truncate">{it.description || <span className="text-gray-300 italic">Description...</span>}</div>
-                                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{(Number(it.qty) * (Number(it.amount) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          {(() => {
+                            let totalQty = 0;
+                            let totalItemPending = 0;
+                            let hasItemizedDetails = (receiptForm.formatType === 'prebooking');
+
+                            (receiptForm.items || []).forEach(it => {
+                              const q = Math.max(1, Number(it.qty) || 1);
+                              totalQty += q;
+                              const paid = Number(it.amount) || 0;
+                              const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                              const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                                ? Number(it.pendingBalance) 
+                                : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                              totalItemPending += pend;
+
+                              if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
+                                hasItemizedDetails = true;
+                              }
+                            });
+
+                            return (
+                              <div className="mb-6">
+                                {hasItemizedDetails ? (
+                                  <>
+                                    <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-1 px-3 py-1.5 font-bold text-[9px] tracking-wider rounded-sm">
+                                      <div className="col-span-1 text-center">Qty</div>
+                                      <div className="col-span-5">Description</div>
+                                      <div className="col-span-2 text-right">Unit Price</div>
+                                      <div className="col-span-2 text-right">Paid</div>
+                                      <div className="col-span-2 text-right">Pending</div>
+                                    </div>
+                                    
+                                    <div className="divide-y divide-gray-150 px-1">
+                                      {receiptForm.items.map((it, idx) => {
+                                        const q = Math.max(1, Number(it.qty) || 1);
+                                        const paid = Number(it.amount) || 0;
+                                        const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                                        const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                                          ? Number(it.pendingBalance) 
+                                          : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                                        const pendPerUnit = q > 1 && pend > 0 ? (pend / q) : 0;
+
+                                        return (
+                                          <div key={idx} className="grid grid-cols-12 gap-1 py-2 text-[10px] items-center">
+                                            <div className="col-span-1 text-center text-gray-700 font-bold">{q}</div>
+                                            <div className="col-span-5 font-medium text-gray-800">
+                                              <div className="truncate">{it.description || <span className="text-gray-300 italic">Description...</span>}</div>
+                                              {pendPerUnit > 0 && (
+                                                <div className="text-[8.5px] text-red-600 font-semibold">(₹{pendPerUnit.toLocaleString('en-IN')} pending/unit)</div>
+                                              )}
+                                            </div>
+                                            <div className="col-span-2 text-right font-mono text-gray-600">
+                                              {unitP !== null ? `₹${unitP.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                                            </div>
+                                            <div className="col-span-2 text-right font-mono font-semibold text-gray-900">
+                                              ₹{paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </div>
+                                            <div className="col-span-2 text-right font-mono font-bold text-red-600">
+                                              {pend > 0 ? `₹${pend.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+
+                                      {receiptForm.includeShipping && (
+                                        <div className="grid grid-cols-12 gap-1 py-2 text-[10px] items-center">
+                                          <div className="col-span-1 text-center text-gray-700 font-bold">1</div>
+                                          <div className="col-span-5 font-medium text-gray-800">Shipping Charges</div>
+                                          <div className="col-span-2 text-right font-mono text-gray-600">₹{Number(receiptForm.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                          <div className="col-span-2 text-right font-mono font-semibold text-gray-900">₹{Number(receiptForm.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                          <div className="col-span-2 text-right font-mono text-gray-400">₹0.00</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-3 py-1.5 font-bold text-[9px] tracking-wider rounded-sm">
+                                      <div className="col-span-2 text-center">Qty</div>
+                                      <div className="col-span-7">Description</div>
+                                      <div className="col-span-3 text-right">Amount</div>
+                                    </div>
+                                    
+                                    <div className="divide-y divide-gray-150 px-1">
+                                      {receiptForm.items.map((it, idx) => (
+                                        <div key={idx} className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
+                                          <div className="col-span-2 text-center text-gray-600">{it.qty}</div>
+                                          <div className="col-span-7 font-medium text-gray-800 truncate">{it.description || <span className="text-gray-300 italic">Description...</span>}</div>
+                                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                        </div>
+                                      ))}
+                                      
+                                      {receiptForm.includeShipping && (
+                                        <div className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
+                                          <div className="col-span-2 text-center text-gray-600">1</div>
+                                          <div className="col-span-7 font-medium text-gray-800">Shipping Charges</div>
+                                          <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(receiptForm.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+
+                                <div className="mt-2 pt-1.5 border-t border-gray-200 flex justify-between items-center text-[9px] text-gray-600">
+                                  <span className="font-semibold">Total Quantity: <span className="font-bold text-black">{totalQty} {totalQty === 1 ? 'unit' : 'units'}</span> ({receiptForm.items?.length || 0} items)</span>
                                 </div>
-                              ))}
-                              
-                              {/* Shipping row */}
-                              {receiptForm.includeShipping && (
-                                <div className="grid grid-cols-12 gap-2 py-2.5 text-[10px]">
-                                  <div className="col-span-2 text-center text-gray-600">1</div>
-                                  <div className="col-span-7 font-medium text-gray-800">Shipping Charges</div>
-                                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900">₹{Number(receiptForm.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Summary and Footer */}
@@ -3290,31 +3494,124 @@ export default function Admin() {
                     </div>
 
                     {/* Table Section */}
-                    <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
-                      <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em' }}>
-                        <div className="col-span-2 text-center">Qty</div>
-                        <div className="col-span-7">Description</div>
-                        <div className="col-span-3 text-right">Amount</div>
-                      </div>
-                      
-                      <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
-                        {activeReceiptPreview.items?.map((it, idx) => (
-                          <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
-                            <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>{it.qty}</div>
-                            <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>{it.description}</div>
-                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    {(() => {
+                      let totalQty = 0;
+                      let totalItemPending = 0;
+                      let hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
+
+                      (activeReceiptPreview.items || []).forEach(it => {
+                        const q = Math.max(1, Number(it.qty) || 1);
+                        totalQty += q;
+                        const paid = Number(it.amount) || 0;
+                        const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                        const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                          ? Number(it.pendingBalance) 
+                          : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                        totalItemPending += pend;
+
+                        if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
+                          hasItemizedDetails = true;
+                        }
+                      });
+
+                      return (
+                        <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
+                          {hasItemizedDetails ? (
+                            <>
+                              <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-1 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 12px', letterSpacing: '0.04em' }}>
+                                <div className="col-span-1 text-center">Qty</div>
+                                <div className="col-span-5">Description</div>
+                                <div className="col-span-2 text-right">Unit Price</div>
+                                <div className="col-span-2 text-right">Paid</div>
+                                <div className="col-span-2 text-right">Pending</div>
+                              </div>
+                              
+                              <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                                {activeReceiptPreview.items?.map((it, idx) => {
+                                  const q = Math.max(1, Number(it.qty) || 1);
+                                  const paid = Number(it.amount) || 0;
+                                  const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                                  const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                                    ? Number(it.pendingBalance) 
+                                    : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                                  const pendPerUnit = q > 1 && pend > 0 ? (pend / q) : 0;
+
+                                  return (
+                                    <div key={idx} className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
+                                      <div className="col-span-1 text-center text-gray-700 font-bold" style={{ color: '#374151' }}>{q}</div>
+                                      <div className="col-span-5 font-medium text-gray-900" style={{ color: '#111827' }}>
+                                        <div>{it.description}</div>
+                                        {pendPerUnit > 0 && (
+                                          <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
+                                            (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="col-span-2 text-right font-mono text-gray-700" style={{ fontFamily: 'monospace', color: '#4b5563' }}>
+                                        {unitP !== null ? `₹${unitP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                      </div>
+                                      <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>
+                                        ₹{paid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </div>
+                                      <div className="col-span-2 text-right font-mono font-bold text-red-600" style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#dc2626' }}>
+                                        {pend > 0 ? `₹${pend.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {activeReceiptPreview.includeShipping && (
+                                  <div className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
+                                    <div className="col-span-1 text-center text-gray-700 font-bold" style={{ color: '#374151' }}>1</div>
+                                    <div className="col-span-5 font-medium text-gray-900" style={{ color: '#111827' }}>Shipping Charges</div>
+                                    <div className="col-span-2 text-right font-mono text-gray-700" style={{ fontFamily: 'monospace', color: '#4b5563' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                    <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                    <div className="col-span-2 text-right font-mono font-bold text-gray-400" style={{ fontFamily: 'monospace', color: '#9ca3af' }}>₹0.00</div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em' }}>
+                                <div className="col-span-2 text-center">Qty</div>
+                                <div className="col-span-7">Description</div>
+                                <div className="col-span-3 text-right">Amount</div>
+                              </div>
+                              
+                              <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                                {activeReceiptPreview.items?.map((it, idx) => (
+                                  <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
+                                    <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>{it.qty}</div>
+                                    <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>{it.description}</div>
+                                    <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  </div>
+                                ))}
+                                
+                                {activeReceiptPreview.includeShipping && (
+                                  <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
+                                    <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>1</div>
+                                    <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>Shipping Charges</div>
+                                    <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+
+                          <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center text-xs text-gray-600" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#4b5563' }}>
+                            <span className="font-semibold" style={{ fontWeight: '600' }}>
+                              Total Quantity: <span className="font-bold text-black" style={{ color: '#000000', fontWeight: 'bold' }}>{totalQty} {totalQty === 1 ? 'unit' : 'units'}</span> ({activeReceiptPreview.items?.length || 0} items)
+                            </span>
+                            {hasItemizedDetails && totalItemPending > 0 && (
+                              <span className="font-bold text-red-600 font-mono" style={{ color: '#dc2626', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                                Itemized Pending Total: ₹{totalItemPending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
                           </div>
-                        ))}
-                        
-                        {activeReceiptPreview.includeShipping && (
-                          <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
-                            <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>1</div>
-                            <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>Shipping Charges</div>
-                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Totals Section */}
@@ -3448,29 +3745,124 @@ export default function Admin() {
 
           {/* Table Section */}
           <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
-            <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm print-bg-blue print-text-white" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px' }}>
-              <div className="col-span-2 text-center" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center' }}>Qty</div>
-              <div className="col-span-7" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left' }}>Description</div>
-              <div className="col-span-3 text-right" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right' }}>Amount</div>
-            </div>
-            
-            <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
-              {activeReceiptPreview.items?.map((it, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
-                  <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>{it.qty}</div>
-                  <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>{it.description}</div>
-                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            {(() => {
+              let totalQty = 0;
+              let totalItemPending = 0;
+              let hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
+
+              (activeReceiptPreview.items || []).forEach(it => {
+                const q = Math.max(1, Number(it.qty) || 1);
+                totalQty += q;
+                const paid = Number(it.amount) || 0;
+                const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                  ? Number(it.pendingBalance) 
+                  : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                totalItemPending += pend;
+
+                if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
+                  hasItemizedDetails = true;
+                }
+              });
+
+              return (
+                <div>
+                  {hasItemizedDetails ? (
+                    <>
+                      <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-1 px-4 py-2 font-bold text-xs tracking-wider rounded-sm print-bg-blue print-text-white" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 12px', letterSpacing: '0.04em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px' }}>
+                        <div className="col-span-1 text-center" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center' }}>Qty</div>
+                        <div className="col-span-5" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left' }}>Description</div>
+                        <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Unit Price</div>
+                        <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Paid</div>
+                        <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Pending</div>
+                      </div>
+                      
+                      <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                        {activeReceiptPreview.items?.map((it, idx) => {
+                          const q = Math.max(1, Number(it.qty) || 1);
+                          const paid = Number(it.amount) || 0;
+                          const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                          const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                            ? Number(it.pendingBalance) 
+                            : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                          const pendPerUnit = q > 1 && pend > 0 ? (pend / q) : 0;
+
+                          return (
+                            <div key={idx} className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px', padding: '12px 0', alignItems: 'center' }}>
+                              <div className="col-span-1 text-center text-gray-700 font-bold" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center', color: '#374151', fontWeight: 'bold' }}>{q}</div>
+                              <div className="col-span-5 font-medium text-gray-900" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left', color: '#111827', fontWeight: '500' }}>
+                                <div>{it.description}</div>
+                                {pendPerUnit > 0 && (
+                                  <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
+                                    (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                  </div>
+                                )}
+                              </div>
+                              <div className="col-span-2 text-right font-mono text-gray-700" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#4b5563' }}>
+                                {unitP !== null ? `₹${unitP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                              </div>
+                              <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>
+                                ₹{paid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div className="col-span-2 text-right font-mono font-bold text-red-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: '#dc2626' }}>
+                                {pend > 0 ? `₹${pend.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {activeReceiptPreview.includeShipping && (
+                          <div className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px', padding: '12px 0', alignItems: 'center' }}>
+                            <div className="col-span-1 text-center text-gray-700 font-bold" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center', color: '#374151', fontWeight: 'bold' }}>1</div>
+                            <div className="col-span-5 font-medium text-gray-900" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left', color: '#111827', fontWeight: '500' }}>Shipping Charges</div>
+                            <div className="col-span-2 text-right font-mono text-gray-700" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#4b5563' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div className="col-span-2 text-right font-mono font-bold text-gray-400" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#9ca3af' }}>₹0.00</div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm print-bg-blue print-text-white" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px' }}>
+                        <div className="col-span-2 text-center" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center' }}>Qty</div>
+                        <div className="col-span-7" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left' }}>Description</div>
+                        <div className="col-span-3 text-right" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right' }}>Amount</div>
+                      </div>
+                      
+                      <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                        {activeReceiptPreview.items?.map((it, idx) => (
+                          <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                            <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>{it.qty}</div>
+                            <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>{it.description}</div>
+                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </div>
+                        ))}
+                        
+                        {activeReceiptPreview.includeShipping && (
+                          <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                            <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>1</div>
+                            <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>Shipping Charges</div>
+                            <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center text-xs text-gray-600" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#4b5563', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="font-semibold" style={{ fontWeight: '600' }}>
+                      Total Quantity: <span className="font-bold text-black" style={{ color: '#000000', fontWeight: 'bold' }}>{totalQty} {totalQty === 1 ? 'unit' : 'units'}</span> ({activeReceiptPreview.items?.length || 0} items)
+                    </span>
+                    {hasItemizedDetails && totalItemPending > 0 && (
+                      <span className="font-bold text-red-600 font-mono" style={{ color: '#dc2626', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        Itemized Pending Total: ₹{totalItemPending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              ))}
-              
-              {activeReceiptPreview.includeShipping && (
-                <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
-                  <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>1</div>
-                  <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>Shipping Charges</div>
-                  <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(activeReceiptPreview.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* Totals Section */}
@@ -3701,29 +4093,124 @@ export default function Admin() {
 
               {/* Table Section */}
               <div className="mb-8" style={{ marginTop: '35px', marginBottom: '35px' }}>
-                <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em' }}>
-                  <div className="col-span-2 text-center">Qty</div>
-                  <div className="col-span-7">Description</div>
-                  <div className="col-span-3 text-right">Amount</div>
-                </div>
-                
-                <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
-                  {silentExportReceipt.items?.map((it, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', padding: '12px 0' }}>
-                      <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>{it.qty}</div>
-                      <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>{it.description}</div>
-                      <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                {(() => {
+                  let totalQty = 0;
+                  let totalItemPending = 0;
+                  let hasItemizedDetails = (silentExportReceipt.formatType === 'prebooking');
+
+                  (silentExportReceipt.items || []).forEach(it => {
+                    const q = Math.max(1, Number(it.qty) || 1);
+                    totalQty += q;
+                    const paid = Number(it.amount) || 0;
+                    const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                    const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                      ? Number(it.pendingBalance) 
+                      : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                    totalItemPending += pend;
+
+                    if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
+                      hasItemizedDetails = true;
+                    }
+                  });
+
+                  return (
+                    <div>
+                      {hasItemizedDetails ? (
+                        <>
+                          <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-1 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 12px', letterSpacing: '0.04em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px' }}>
+                            <div className="col-span-1 text-center" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center' }}>Qty</div>
+                            <div className="col-span-5" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left' }}>Description</div>
+                            <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Unit Price</div>
+                            <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Paid</div>
+                            <div className="col-span-2 text-right" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right' }}>Pending</div>
+                          </div>
+                          
+                          <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                            {silentExportReceipt.items?.map((it, idx) => {
+                              const q = Math.max(1, Number(it.qty) || 1);
+                              const paid = Number(it.amount) || 0;
+                              const unitP = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' ? Number(it.unitPrice) : null;
+                              const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
+                                ? Number(it.pendingBalance) 
+                                : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
+                              const pendPerUnit = q > 1 && pend > 0 ? (pend / q) : 0;
+
+                              return (
+                                <div key={idx} className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px', padding: '12px 0', alignItems: 'center' }}>
+                                  <div className="col-span-1 text-center text-gray-700 font-bold" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center', color: '#374151', fontWeight: 'bold' }}>{q}</div>
+                                  <div className="col-span-5 font-medium text-gray-900" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left', color: '#111827', fontWeight: '500' }}>
+                                    <div>{it.description}</div>
+                                    {pendPerUnit > 0 && (
+                                      <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
+                                        (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="col-span-2 text-right font-mono text-gray-700" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#4b5563' }}>
+                                    {unitP !== null ? `₹${unitP.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                  </div>
+                                  <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>
+                                    ₹{paid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                  <div className="col-span-2 text-right font-mono font-bold text-red-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: '#dc2626' }}>
+                                    {pend > 0 ? `₹${pend.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {silentExportReceipt.includeShipping && (
+                              <div className="grid grid-cols-12 gap-1 py-3 text-xs items-center" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '4px', padding: '12px 0', alignItems: 'center' }}>
+                                <div className="col-span-1 text-center text-gray-700 font-bold" style={{ gridColumn: 'span 1 / span 1', textAlign: 'center', color: '#374151', fontWeight: 'bold' }}>1</div>
+                                <div className="col-span-5 font-medium text-gray-900" style={{ gridColumn: 'span 5 / span 5', textAlign: 'left', color: '#111827', fontWeight: '500' }}>Shipping Charges</div>
+                                <div className="col-span-2 text-right font-mono text-gray-700" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#4b5563' }}>₹{Number(silentExportReceipt.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="col-span-2 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(silentExportReceipt.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="col-span-2 text-right font-mono font-bold text-gray-400" style={{ gridColumn: 'span 2 / span 2', textAlign: 'right', fontFamily: 'monospace', color: '#9ca3af' }}>₹0.00</div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="bg-[#2b95c9] text-white grid grid-cols-12 gap-2 px-4 py-2 font-bold text-xs tracking-wider rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '8px 16px', letterSpacing: '0.05em', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px' }}>
+                            <div className="col-span-2 text-center" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center' }}>Qty</div>
+                            <div className="col-span-7" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left' }}>Description</div>
+                            <div className="col-span-3 text-right" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right' }}>Amount</div>
+                          </div>
+                          
+                          <div className="divide-y divide-gray-150 px-1" style={{ borderBottom: '1px solid #e5e7eb', paddingLeft: '4px', paddingRight: '4px' }}>
+                            {silentExportReceipt.items?.map((it, idx) => (
+                              <div key={idx} className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                                <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>{it.qty}</div>
+                                <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>{it.description}</div>
+                                <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              </div>
+                            ))}
+                            
+                            {silentExportReceipt.includeShipping && (
+                              <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: '8px', padding: '12px 0' }}>
+                                <div className="col-span-2 text-center text-gray-600" style={{ gridColumn: 'span 2 / span 2', textAlign: 'center', color: '#4b5563' }}>1</div>
+                                <div className="col-span-7 font-medium text-gray-800" style={{ gridColumn: 'span 7 / span 7', textAlign: 'left', color: '#1f2937' }}>Shipping Charges</div>
+                                <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ gridColumn: 'span 3 / span 3', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(silentExportReceipt.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center text-xs text-gray-600" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#4b5563', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="font-semibold" style={{ fontWeight: '600' }}>
+                          Total Quantity: <span className="font-bold text-black" style={{ color: '#000000', fontWeight: 'bold' }}>{totalQty} {totalQty === 1 ? 'unit' : 'units'}</span> ({silentExportReceipt.items?.length || 0} items)
+                        </span>
+                        {hasItemizedDetails && totalItemPending > 0 && (
+                          <span className="font-bold text-red-600 font-mono" style={{ color: '#dc2626', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                            Itemized Pending Total: ₹{totalItemPending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                  
-                  {silentExportReceipt.includeShipping && (
-                    <div className="grid grid-cols-12 gap-2 py-3 text-xs" style={{ borderTop: '1px solid #f3f4f6', padding: '12px 0' }}>
-                      <div className="col-span-2 text-center text-gray-600" style={{ color: '#4b5563' }}>1</div>
-                      <div className="col-span-7 font-medium text-gray-800" style={{ color: '#1f2937' }}>Shipping Charges</div>
-                      <div className="col-span-3 text-right font-mono font-semibold text-gray-900" style={{ fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>₹{Number(silentExportReceipt.shippingCharges).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    </div>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
             </div>
 
