@@ -923,19 +923,22 @@ export default function Admin() {
     }, 250);
   };
 
-  const handleDownloadImage = async (receiptToExport) => {
+  const handleDownloadJPG = async (receiptToExport) => {
     const receipt = receiptToExport || activeReceiptPreview;
     if (!receipt) return;
     
     let element = document.getElementById('receipt-modal-card');
-    if (!element && !activeReceiptPreview) {
+    let wasOpenedForExport = false;
+
+    if (!element) {
       setActiveReceiptPreview(receipt);
-      await new Promise(r => setTimeout(r, 200));
+      wasOpenedForExport = true;
+      await new Promise(r => setTimeout(r, 250));
       element = document.getElementById('receipt-modal-card');
     }
     
     if (!element) {
-      alert("Unable to generate image. Please open receipt details.");
+      alert("Unable to generate JPG image. Please open receipt details.");
       return;
     }
     
@@ -947,29 +950,37 @@ export default function Admin() {
         backgroundColor: '#ffffff',
         logging: false,
       });
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const link = document.createElement('a');
       link.href = imgData;
-      link.download = `${getReceiptFilename(receipt)}.png`;
+      link.download = `${getReceiptFilename(receipt)}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (err) {
-      console.error('Image download error:', err);
-      alert('Failed to download image: ' + err.message);
+      console.error('JPG download error:', err);
+      alert('Failed to download JPG image: ' + err.message);
     } finally {
       setIsExportingReceipt(false);
+      if (wasOpenedForExport) {
+        setActiveReceiptPreview(null);
+      }
     }
   };
+
+  const handleDownloadImage = handleDownloadJPG;
 
   const handleDownloadPDF = async (receiptToExport) => {
     const receipt = receiptToExport || activeReceiptPreview;
     if (!receipt) return;
     
     let element = document.getElementById('receipt-modal-card');
-    if (!element && !activeReceiptPreview) {
+    let wasOpenedForExport = false;
+
+    if (!element) {
       setActiveReceiptPreview(receipt);
-      await new Promise(r => setTimeout(r, 200));
+      wasOpenedForExport = true;
+      await new Promise(r => setTimeout(r, 250));
       element = document.getElementById('receipt-modal-card');
     }
     
@@ -1003,6 +1014,9 @@ export default function Admin() {
       alert('Failed to download PDF: ' + err.message);
     } finally {
       setIsExportingReceipt(false);
+      if (wasOpenedForExport) {
+        setActiveReceiptPreview(null);
+      }
     }
   };
 
@@ -2717,18 +2731,21 @@ export default function Admin() {
                           <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                           <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
                         </div>
-                        <div className="col-span-2 flex justify-end gap-1.5" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => handleEditReceipt(receipt)} title="Edit receipt" className="p-2 text-white/60 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
-                            <Edit2 size={15} />
+                        <div className="col-span-2 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => handleEditReceipt(receipt)} title="Edit receipt" className="p-1.5 text-white/60 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
+                            <Edit2 size={14} />
                           </button>
-                          <button onClick={() => handleDownloadPDF(receipt)} title="Download PDF" className="p-2 text-purple-400 hover:text-white bg-purple-500/10 border border-purple-500/20 rounded-lg hover:bg-purple-500/20 transition-colors cursor-pointer">
-                            <Download size={15} />
+                          <button onClick={() => handleDownloadJPG(receipt)} title="Download JPG Image" className="p-1.5 text-emerald-400 hover:text-white bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors cursor-pointer">
+                            <ImageIcon size={14} />
                           </button>
-                          <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-2 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
-                            <Printer size={15} />
+                          <button onClick={() => handleDownloadPDF(receipt)} title="Download PDF Document" className="p-1.5 text-purple-400 hover:text-white bg-purple-500/10 border border-purple-500/20 rounded-lg hover:bg-purple-500/20 transition-colors cursor-pointer">
+                            <Download size={14} />
                           </button>
-                          <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-2 text-white/40 hover:text-gk-orange bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
-                            <Trash2 size={15} />
+                          <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-1.5 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
+                            <Printer size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-1.5 text-white/40 hover:text-gk-orange bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
@@ -2907,12 +2924,12 @@ export default function Admin() {
                 </button>
                 <button 
                   disabled={isExportingReceipt}
-                  onClick={() => handleDownloadImage(activeReceiptPreview)} 
+                  onClick={() => handleDownloadJPG(activeReceiptPreview)} 
                   className="px-4 py-2.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-2 transition-colors text-sm cursor-pointer disabled:opacity-50"
-                  title="Download as PNG Image"
+                  title="Download as JPG Image"
                 >
                   {isExportingReceipt ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
-                  Download Image
+                  Download JPG
                 </button>
                 <button 
                   disabled={isExportingReceipt}
