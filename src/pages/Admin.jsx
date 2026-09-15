@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2, MoreVertical, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2, MoreVertical, Copy, Check, GripVertical } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
@@ -431,6 +431,23 @@ export default function Admin() {
   const [copiedFieldId, setCopiedFieldId] = useState(null)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null)
+
+  const handleMoveItem = (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= receiptForm.items.length) return;
+    setReceiptForm(prev => {
+      const newItems = [...prev.items];
+      const [moved] = newItems.splice(fromIndex, 1);
+      newItems.splice(toIndex, 0, moved);
+      return { ...prev, items: newItems };
+    });
+  };
+
+  const handleDropItem = (targetIndex) => {
+    if (draggedItemIndex === null || draggedItemIndex === targetIndex) return;
+    handleMoveItem(draggedItemIndex, targetIndex);
+    setDraggedItemIndex(null);
+  };
 
   const handleCopyText = (text, fieldId) => {
     if (!text) return;
@@ -2207,7 +2224,20 @@ export default function Admin() {
                     <div className="lg:col-span-7 space-y-5">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Receipt Number *</label>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Receipt Number *</label>
+                            {receiptForm.receiptNumber && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(receiptForm.receiptNumber, 'edit-receiptNumber')}
+                                className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                title="Copy Receipt Number"
+                              >
+                                {copiedFieldId === 'edit-receiptNumber' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedFieldId === 'edit-receiptNumber' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            )}
+                          </div>
                           <input type="text" value={receiptForm.receiptNumber} onChange={e => setReceiptForm(prev => ({ ...prev, receiptNumber: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                         </div>
                         <div>
@@ -2264,7 +2294,20 @@ export default function Admin() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {/* Customer Name Field */}
                           <div className="relative">
-                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Name *</label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Customer Name *</label>
+                              {receiptForm.customerName && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(receiptForm.customerName, 'edit-customerName')}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                  title="Copy Customer Name"
+                                >
+                                  {copiedFieldId === 'edit-customerName' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                  <span>{copiedFieldId === 'edit-customerName' ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               placeholder="e.g. Rasesh Talati" 
@@ -2318,7 +2361,20 @@ export default function Admin() {
 
                           {/* Customer Phone Field */}
                           <div className="relative">
-                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Phone</label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Customer Phone</label>
+                              {receiptForm.customerPhone && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(receiptForm.customerPhone, 'edit-customerPhone')}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                  title="Copy Phone Number"
+                                >
+                                  {copiedFieldId === 'edit-customerPhone' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                  <span>{copiedFieldId === 'edit-customerPhone' ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               placeholder="e.g. 9819169632" 
@@ -2334,16 +2390,55 @@ export default function Admin() {
                           </div>
 
                           <div>
-                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Email ID (Optional)</label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Email ID (Optional)</label>
+                              {receiptForm.customerEmail && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(receiptForm.customerEmail, 'edit-customerEmail')}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                  title="Copy Email Address"
+                                >
+                                  {copiedFieldId === 'edit-customerEmail' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                  <span>{copiedFieldId === 'edit-customerEmail' ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                             <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Instagram Handle (Optional)</label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Instagram Handle (Optional)</label>
+                              {receiptForm.customerInsta && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(receiptForm.customerInsta, 'edit-customerInsta')}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                  title="Copy Instagram Handle"
+                                >
+                                  {copiedFieldId === 'edit-customerInsta' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                  <span>{copiedFieldId === 'edit-customerInsta' ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                             <input type="text" placeholder="e.g. @diecast_collector" value={receiptForm.customerInsta} onChange={e => setReceiptForm(prev => ({ ...prev, customerInsta: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Customer Address (Optional)</label>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Customer Address (Optional)</label>
+                            {receiptForm.customerAddress && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(receiptForm.customerAddress, 'edit-customerAddress')}
+                                className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                title="Copy Customer Address"
+                              >
+                                {copiedFieldId === 'edit-customerAddress' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedFieldId === 'edit-customerAddress' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            )}
+                          </div>
                           <textarea rows={3} placeholder="Full shipping address..." value={receiptForm.customerAddress} onChange={e => setReceiptForm(prev => ({ ...prev, customerAddress: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                         </div>
                       </div>
@@ -2407,15 +2502,56 @@ export default function Admin() {
                         </div>
 
                         {receiptForm.items.map((item, index) => (
-                          <div key={index} className="flex gap-3 items-center">
+                          <div 
+                            key={index} 
+                            draggable
+                            onDragStart={(e) => {
+                              setDraggedItemIndex(index);
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", index.toString());
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              handleDropItem(index);
+                            }}
+                            onDragEnd={() => setDraggedItemIndex(null)}
+                            className={`flex gap-2.5 items-center p-2.5 rounded-xl border transition-all ${
+                              draggedItemIndex === index 
+                                ? 'opacity-40 bg-blue-500/10 border-blue-500/40 border-dashed' 
+                                : 'bg-black/30 border-white/5 hover:border-white/10'
+                            }`}
+                          >
+                            {/* Drag Handle & Reorder Controls */}
+                            <div className="flex flex-col items-center justify-center shrink-0 mt-3">
+                              <div 
+                                className="cursor-grab active:cursor-grabbing p-1 text-white/40 hover:text-white transition-colors"
+                                title="Drag up or down to reorder item position"
+                              >
+                                <GripVertical size={16} />
+                              </div>
+                            </div>
+
+                            {/* Qty Field */}
                             <div className="w-16">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Qty</label>
-                              <input type="number" min="1" value={item.qty} onChange={e => {
-                                const newItems = [...receiptForm.items];
-                                newItems[index].qty = Math.max(1, parseInt(e.target.value) || 1);
-                                setReceiptForm(prev => ({ ...prev, items: newItems }));
-                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-center text-white focus:outline-none" />
+                              <input 
+                                type="number" 
+                                min="1" 
+                                value={item.qty} 
+                                onChange={e => {
+                                  const newItems = [...receiptForm.items];
+                                  newItems[index].qty = Math.max(1, parseInt(e.target.value) || 1);
+                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                }} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2.5 py-2 text-center text-white focus:outline-none" 
+                              />
                             </div>
+
+                            {/* Description Field */}
                             <div className="flex-1">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Description</label>
                               <div className="relative">
@@ -2434,7 +2570,7 @@ export default function Admin() {
                                   className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
                                 />
 
-                                {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box & scrollable) */}
+                                {/* FLOATING PRODUCT AUTOCOMPLETE DROPDOWN */}
                                 {activeProductDropdownIndex === index && getProductMatches(item.description).length > 0 && (
                                   <div 
                                     onMouseDown={(e) => e.preventDefault()}
@@ -2470,22 +2606,61 @@ export default function Admin() {
                                 )}
                               </div>
                             </div>
+
+                            {/* Amount Field */}
                             <div className="w-28">
                               <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
-                              <input type="number" placeholder="2000" value={item.amount} onChange={e => {
-                                const newItems = [...receiptForm.items];
-                                newItems[index].amount = e.target.value;
-                                setReceiptForm(prev => ({ ...prev, items: newItems }));
-                              }} className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-right text-white focus:outline-none focus:border-blue-500" />
+                              <input 
+                                type="number" 
+                                placeholder="2000" 
+                                value={item.amount} 
+                                onChange={e => {
+                                  const newItems = [...receiptForm.items];
+                                  newItems[index].amount = e.target.value;
+                                  setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                }} 
+                                className="w-full bg-black/55 border border-white/10 rounded-lg px-3 py-2 text-right text-white focus:outline-none focus:border-blue-500" 
+                              />
                             </div>
-                            {receiptForm.items.length > 1 && (
-                              <button onClick={() => {
-                                const newItems = receiptForm.items.filter((_, i) => i !== index);
-                                setReceiptForm(prev => ({ ...prev, items: newItems }));
-                              }} className="mt-5 p-2 text-white/40 hover:text-gk-orange hover:bg-white/5 rounded-lg transition-colors cursor-pointer">
-                                <Trash2 size={16} />
-                              </button>
-                            )}
+
+                            {/* Move Up/Down & Delete Actions */}
+                            <div className="flex items-center gap-1 mt-5 shrink-0">
+                              {receiptForm.items.length > 1 && (
+                                <>
+                                  <button 
+                                    type="button"
+                                    disabled={index === 0}
+                                    onClick={() => handleMoveItem(index, index - 1)}
+                                    className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/40 transition-colors cursor-pointer"
+                                    title="Move item up"
+                                  >
+                                    <ChevronUp size={14} />
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    disabled={index === receiptForm.items.length - 1}
+                                    onClick={() => handleMoveItem(index, index + 1)}
+                                    className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-white/40 transition-colors cursor-pointer"
+                                    title="Move item down"
+                                  >
+                                    <ChevronDown size={14} />
+                                  </button>
+                                </>
+                              )}
+                              {receiptForm.items.length > 1 && (
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    const newItems = receiptForm.items.filter((_, i) => i !== index);
+                                    setReceiptForm(prev => ({ ...prev, items: newItems }));
+                                  }} 
+                                  className="p-1 text-white/40 hover:text-gk-orange hover:bg-white/5 rounded transition-colors cursor-pointer ml-0.5"
+                                  title="Delete item"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                         
@@ -2557,11 +2732,37 @@ export default function Admin() {
 
                       <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Special Instructions / Notes (Optional)</label>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Special Instructions / Notes (Optional)</label>
+                            {receiptForm.instructions && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(receiptForm.instructions, 'edit-instructions')}
+                                className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                title="Copy Instructions"
+                              >
+                                {copiedFieldId === 'edit-instructions' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedFieldId === 'edit-instructions' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            )}
+                          </div>
                           <input type="text" value={receiptForm.instructions} onChange={e => setReceiptForm(prev => ({ ...prev, instructions: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="e.g. Deliver on weekday, handle with care, gift packaging..." />
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Footer Refund / Payment Note</label>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Footer Refund / Payment Note</label>
+                            {receiptForm.footerNote && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(receiptForm.footerNote, 'edit-footerNote')}
+                                className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                title="Copy Footer Note"
+                              >
+                                {copiedFieldId === 'edit-footerNote' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedFieldId === 'edit-footerNote' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            )}
+                          </div>
                           <textarea rows={2} value={receiptForm.footerNote} onChange={e => setReceiptForm(prev => ({ ...prev, footerNote: e.target.value }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" placeholder="Custom note to appear at the bottom of the receipt..." />
                         </div>
                       </div>
@@ -2880,22 +3081,6 @@ export default function Admin() {
                                 className="absolute right-0 top-full mt-1.5 z-50 bg-[#16161f] border border-white/15 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.6)] py-1.5 min-w-[170px] overflow-hidden"
                                 onClick={e => e.stopPropagation()}
                               >
-                                <button 
-                                  onClick={() => { setActiveActionDropdownId(null); handleCopyReceiptSummary(receipt); }} 
-                                  className="w-full px-3.5 py-2 text-left text-xs text-blue-300 hover:text-blue-200 hover:bg-blue-500/10 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
-                                >
-                                  {copiedFieldId === `summary-${receipt.id}` ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-blue-400" />}
-                                  <span>{copiedFieldId === `summary-${receipt.id}` ? 'Copied Summary!' : 'Copy Summary'}</span>
-                                </button>
-                                {receipt.customerPhone && (
-                                  <button 
-                                    onClick={() => { setActiveActionDropdownId(null); handleCopyText(receipt.customerPhone, `phone-${receipt.id}`); }} 
-                                    className="w-full px-3.5 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                  >
-                                    {copiedFieldId === `phone-${receipt.id}` ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-gray-400" />}
-                                    <span>Copy Phone</span>
-                                  </button>
-                                )}
                                 <button 
                                   onClick={() => { setActiveActionDropdownId(null); handleEditReceipt(receipt); }} 
                                   className="w-full px-3.5 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
