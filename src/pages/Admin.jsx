@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2, MoreVertical } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2, MoreVertical, Copy, Check } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
@@ -428,8 +428,40 @@ export default function Admin() {
   const [silentExportReceipt, setSilentExportReceipt] = useState(null)
   const [isExportingReceipt, setIsExportingReceipt] = useState(false)
   const [activeActionDropdownId, setActiveActionDropdownId] = useState(null)
+  const [copiedFieldId, setCopiedFieldId] = useState(null)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
+
+  const handleCopyText = (text, fieldId) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedFieldId(fieldId);
+      setTimeout(() => setCopiedFieldId(null), 1500);
+    } catch (err) {
+      console.error('Clipboard copy error:', err);
+    }
+  };
+
+  const handleCopyReceiptSummary = (receipt) => {
+    if (!receipt) return;
+    const itemsText = receipt.items?.map(it => `• ${it.qty}x ${it.description} (₹${Number(it.amount).toLocaleString('en-IN')})`).join('\n') || '';
+    const textLines = [
+      `🧾 RECEIPT - ${receipt.receiptNumber}`,
+      `Date: ${receipt.dateString}`,
+      `Customer: ${receipt.customerName}`,
+      receipt.customerPhone ? `Phone: ${receipt.customerPhone}` : null,
+      receipt.customerEmail ? `Email: ${receipt.customerEmail}` : null,
+      receipt.customerInsta ? `Insta: ${receipt.customerInsta}` : null,
+      receipt.customerAddress ? `Address:\n${receipt.customerAddress}` : null,
+      itemsText ? `\nItems:\n${itemsText}` : null,
+      `Total Paid: ₹${Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      receipt.pendingBalance > 0 ? `Balance Due: ₹${Number(receipt.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : null,
+      (receipt.instructions || receipt.instruction) ? `Instructions: ${receipt.instructions || receipt.instruction}` : null
+    ].filter(Boolean).join('\n');
+
+    handleCopyText(textLines, `summary-${receipt.id}`);
+  };
 
   useEffect(() => {
     const handleClickOutside = () => setActiveActionDropdownId(null);
@@ -983,6 +1015,7 @@ export default function Admin() {
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        ignoreElements: (el) => el.classList.contains('no-print') || el.hasAttribute('data-html2canvas-ignore'),
       });
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const link = document.createElement('a');
@@ -1031,6 +1064,7 @@ export default function Admin() {
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
+        ignoreElements: (el) => el.classList.contains('no-print') || el.hasAttribute('data-html2canvas-ignore'),
       });
       const imgData = canvas.toDataURL('image/png');
       
@@ -2747,13 +2781,45 @@ export default function Admin() {
                     {paginatedReceipts.map(receipt => (
                       <div key={receipt.id} onClick={() => setActiveReceiptPreview(receipt)} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/10 transition-colors group cursor-pointer">
                         <div className="col-span-2">
-                          <div className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</span>
+                            <button 
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(receipt.receiptNumber, `row-num-${receipt.id}`); }}
+                              className="p-1 text-white/30 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
+                              title="Copy Receipt Number"
+                            >
+                              {copiedFieldId === `row-num-${receipt.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                            </button>
+                          </div>
                           <div className="text-[9px] text-white/40 font-mono mt-0.5">{receipt.dateString?.split(' - ')[0]}</div>
                         </div>
                         <div className="col-span-4">
-                          <div className="font-bold text-sm text-white">{receipt.customerName}</div>
+                          <div className="font-bold text-sm text-white flex items-center gap-2">
+                            <span>{receipt.customerName}</span>
+                            <button 
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(receipt.customerName, `row-name-${receipt.id}`); }}
+                              className="p-0.5 text-white/20 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+                              title="Copy Customer Name"
+                            >
+                              {copiedFieldId === `row-name-${receipt.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                            </button>
+                          </div>
                           <div className="flex flex-wrap gap-2 text-xs text-white/50 mt-0.5">
-                            {receipt.customerPhone && <span>{receipt.customerPhone}</span>}
+                            {receipt.customerPhone && (
+                              <span className="flex items-center gap-1">
+                                <span>{receipt.customerPhone}</span>
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleCopyText(receipt.customerPhone, `row-phone-${receipt.id}`); }}
+                                  className="p-0.5 text-white/30 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
+                                  title="Copy Phone Number"
+                                >
+                                  {copiedFieldId === `row-phone-${receipt.id}` ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                                </button>
+                              </span>
+                            )}
                             {receipt.customerEmail && <span className="text-blue-300 font-mono text-[11px]">{receipt.customerEmail}</span>}
                             {receipt.customerInsta && <span className="text-purple-300 font-mono text-[11px]">{receipt.customerInsta.startsWith('@') ? receipt.customerInsta : `@${receipt.customerInsta}`}</span>}
                           </div>
@@ -2811,9 +2877,25 @@ export default function Admin() {
                                 animate={{ opacity: 1, scale: 1, y: 0 }} 
                                 exit={{ opacity: 0, scale: 0.95, y: -5 }} 
                                 transition={{ duration: 0.12 }}
-                                className="absolute right-0 top-full mt-1.5 z-50 bg-[#16161f] border border-white/15 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.6)] py-1.5 min-w-[160px] overflow-hidden"
+                                className="absolute right-0 top-full mt-1.5 z-50 bg-[#16161f] border border-white/15 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.6)] py-1.5 min-w-[170px] overflow-hidden"
                                 onClick={e => e.stopPropagation()}
                               >
+                                <button 
+                                  onClick={() => { setActiveActionDropdownId(null); handleCopyReceiptSummary(receipt); }} 
+                                  className="w-full px-3.5 py-2 text-left text-xs text-blue-300 hover:text-blue-200 hover:bg-blue-500/10 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
+                                >
+                                  {copiedFieldId === `summary-${receipt.id}` ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-blue-400" />}
+                                  <span>{copiedFieldId === `summary-${receipt.id}` ? 'Copied Summary!' : 'Copy Summary'}</span>
+                                </button>
+                                {receipt.customerPhone && (
+                                  <button 
+                                    onClick={() => { setActiveActionDropdownId(null); handleCopyText(receipt.customerPhone, `phone-${receipt.id}`); }} 
+                                    className="w-full px-3.5 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                  >
+                                    {copiedFieldId === `phone-${receipt.id}` ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-gray-400" />}
+                                    <span>Copy Phone</span>
+                                  </button>
+                                )}
                                 <button 
                                   onClick={() => { setActiveActionDropdownId(null); handleEditReceipt(receipt); }} 
                                   className="w-full px-3.5 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -2893,7 +2975,17 @@ export default function Admin() {
                   <h3 className="text-lg font-bold text-white">Receipt Details</h3>
                   <p className="text-xs text-white/50 mt-1 font-mono">Reference: {activeReceiptPreview.receiptNumber}</p>
                 </div>
-                <button onClick={() => setActiveReceiptPreview(null)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => handleCopyReceiptSummary(activeReceiptPreview)}
+                    className="px-3 py-1.5 bg-blue-500/15 border border-blue-500/30 hover:bg-blue-500/25 rounded-lg text-blue-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Copy Receipt Summary for WhatsApp / DM"
+                  >
+                    {copiedFieldId === `summary-${activeReceiptPreview.id}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    <span>{copiedFieldId === `summary-${activeReceiptPreview.id}` ? 'Copied Summary!' : 'Copy Summary'}</span>
+                  </button>
+                  <button onClick={() => setActiveReceiptPreview(null)} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+                </div>
               </div>
 
               {/* Receipt Body in screen view - 100% 1:1 WYSIWYG match with print layout */}
@@ -2927,7 +3019,17 @@ export default function Admin() {
                       </div>
                       <div className="text-right">
                         <h2 className="text-3xl font-black text-gray-800 tracking-tight leading-none mb-1" style={{ fontSize: '28px', fontWeight: '900', margin: '0 0 4px 0', color: '#1f2937' }}>Receipt</h2>
-                        <p className="text-sm text-gray-600 font-semibold" style={{ fontSize: '12px', margin: 0, color: '#4b5563' }}>Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</p>
+                        <div className="text-sm text-gray-600 font-semibold flex items-center justify-end gap-1.5" style={{ fontSize: '12px', margin: 0, color: '#4b5563' }}>
+                          <span>Receipt # &nbsp;{activeReceiptPreview.receiptNumber}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.receiptNumber, `preview-num-${activeReceiptPreview.id}`); }}
+                            className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center no-print"
+                            data-html2canvas-ignore="true"
+                            title="Copy Receipt Number"
+                          >
+                            {copiedFieldId === `preview-num-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                          </button>
+                        </div>
                         <p className="text-xs text-gray-500 font-medium mt-1" style={{ fontSize: '11px', margin: '4px 0 0 0', color: '#6b7280' }}>Date &nbsp;{activeReceiptPreview.dateString}</p>
                       </div>
                     </div>
@@ -2936,11 +3038,69 @@ export default function Admin() {
                     <div className="mb-8" style={{ marginTop: '30px', marginBottom: '30px' }}>
                       <div className="bg-[#2b95c9] text-white px-4 py-1.5 font-bold text-xs tracking-wider mb-3 rounded-sm" style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#2b95c9', color: '#ffffff', padding: '6px 12px', letterSpacing: '0.05em' }}>To</div>
                       <div className="px-1 space-y-1 text-gray-800 text-xs leading-relaxed" style={{ fontSize: '11px', color: '#1f2937', paddingLeft: '4px' }}>
-                        <div className="font-bold text-black text-sm" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>{activeReceiptPreview.customerName}</div>
-                        {activeReceiptPreview.customerPhone && <div className="font-semibold" style={{ fontWeight: '600' }}>{activeReceiptPreview.customerPhone}</div>}
-                        {activeReceiptPreview.customerEmail && <div className="font-medium text-gray-600" style={{ fontWeight: '500', color: '#4b5563' }}>{activeReceiptPreview.customerEmail}</div>}
-                        {activeReceiptPreview.customerInsta && <div className="font-medium text-blue-600" style={{ fontWeight: '500', color: '#2563eb' }}>{activeReceiptPreview.customerInsta.startsWith('@') ? activeReceiptPreview.customerInsta : `@${activeReceiptPreview.customerInsta}`}</div>}
-                        {activeReceiptPreview.customerAddress && <div className="whitespace-pre-line text-gray-600 mt-1" style={{ lineHeight: '1.5', color: '#4b5563' }}>{activeReceiptPreview.customerAddress}</div>}
+                        <div className="font-bold text-black text-sm flex items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 'bold', margin: '0 0 2px 0', color: '#000000' }}>
+                          <span>{activeReceiptPreview.customerName}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.customerName, `preview-name-${activeReceiptPreview.id}`); }}
+                            className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center no-print"
+                            data-html2canvas-ignore="true"
+                            title="Copy Customer Name"
+                          >
+                            {copiedFieldId === `preview-name-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                          </button>
+                        </div>
+                        {activeReceiptPreview.customerPhone && (
+                          <div className="font-semibold flex items-center gap-1.5" style={{ fontWeight: '600' }}>
+                            <span>{activeReceiptPreview.customerPhone}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.customerPhone, `preview-phone-${activeReceiptPreview.id}`); }}
+                              className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center no-print"
+                              data-html2canvas-ignore="true"
+                              title="Copy Phone Number"
+                            >
+                              {copiedFieldId === `preview-phone-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        )}
+                        {activeReceiptPreview.customerEmail && (
+                          <div className="font-medium text-gray-600 flex items-center gap-1.5" style={{ fontWeight: '500', color: '#4b5563' }}>
+                            <span>{activeReceiptPreview.customerEmail}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.customerEmail, `preview-email-${activeReceiptPreview.id}`); }}
+                              className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center no-print"
+                              data-html2canvas-ignore="true"
+                              title="Copy Email Address"
+                            >
+                              {copiedFieldId === `preview-email-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        )}
+                        {activeReceiptPreview.customerInsta && (
+                          <div className="font-medium text-blue-600 flex items-center gap-1.5" style={{ fontWeight: '500', color: '#2563eb' }}>
+                            <span>{activeReceiptPreview.customerInsta.startsWith('@') ? activeReceiptPreview.customerInsta : `@${activeReceiptPreview.customerInsta}`}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.customerInsta, `preview-insta-${activeReceiptPreview.id}`); }}
+                              className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center no-print"
+                              data-html2canvas-ignore="true"
+                              title="Copy Instagram Handle"
+                            >
+                              {copiedFieldId === `preview-insta-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        )}
+                        {activeReceiptPreview.customerAddress && (
+                          <div className="whitespace-pre-line text-gray-600 mt-1 flex items-start gap-1.5" style={{ lineHeight: '1.5', color: '#4b5563' }}>
+                            <span className="flex-1">{activeReceiptPreview.customerAddress}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCopyText(activeReceiptPreview.customerAddress, `preview-address-${activeReceiptPreview.id}`); }}
+                              className="p-1 hover:bg-gray-200/60 rounded text-gray-400 hover:text-gray-700 transition-colors cursor-pointer inline-flex items-center shrink-0 no-print"
+                              data-html2canvas-ignore="true"
+                              title="Copy Customer Address"
+                            >
+                              {copiedFieldId === `preview-address-${activeReceiptPreview.id}` ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -3015,6 +3175,14 @@ export default function Admin() {
               </div>
 
               <div className="flex flex-wrap justify-end gap-2.5 pt-2">
+                <button 
+                  onClick={() => handleCopyReceiptSummary(activeReceiptPreview)} 
+                  className="px-4 py-2.5 rounded-lg bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 text-blue-300 font-semibold flex items-center gap-2 transition-colors text-sm cursor-pointer"
+                  title="Copy Receipt Summary for WhatsApp / DM"
+                >
+                  {copiedFieldId === `summary-${activeReceiptPreview.id}` ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                  <span>{copiedFieldId === `summary-${activeReceiptPreview.id}` ? 'Copied Summary!' : 'Copy Summary'}</span>
+                </button>
                 <button 
                   onClick={() => setActiveReceiptPreview(null)} 
                   className="px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold transition-colors text-sm cursor-pointer"
