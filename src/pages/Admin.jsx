@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2, MoreVertical } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
@@ -427,8 +427,15 @@ export default function Admin() {
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
   const [silentExportReceipt, setSilentExportReceipt] = useState(null)
   const [isExportingReceipt, setIsExportingReceipt] = useState(false)
+  const [activeActionDropdownId, setActiveActionDropdownId] = useState(null)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveActionDropdownId(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [])
 
   // 1. Unique Customer Suggestions from past receipts
   const uniqueCustomerSuggestions = useMemo(() => {
@@ -2734,22 +2741,63 @@ export default function Admin() {
                           <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                           <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
                         </div>
-                        <div className="col-span-2 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => handleEditReceipt(receipt)} title="Edit receipt" className="p-1.5 text-white/60 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
-                            <Edit2 size={14} />
+                        <div className="col-span-2 flex justify-end relative" onClick={e => e.stopPropagation()}>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveActionDropdownId(activeActionDropdownId === receipt.id ? null : receipt.id);
+                            }}
+                            className="px-2.5 py-1.5 text-white/70 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:border-blue-500/50"
+                            title="Receipt Actions"
+                          >
+                            <MoreVertical size={15} />
+                            <span className="hidden sm:inline">Actions</span>
+                            <ChevronDown size={12} className={`transition-transform duration-200 ${activeActionDropdownId === receipt.id ? 'rotate-180' : ''}`} />
                           </button>
-                          <button onClick={() => handleDownloadJPG(receipt)} title="Download JPG Image" className="p-1.5 text-emerald-400 hover:text-white bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors cursor-pointer">
-                            <ImageIcon size={14} />
-                          </button>
-                          <button onClick={() => handleDownloadPDF(receipt)} title="Download PDF Document" className="p-1.5 text-purple-400 hover:text-white bg-purple-500/10 border border-purple-500/20 rounded-lg hover:bg-purple-500/20 transition-colors cursor-pointer">
-                            <Download size={14} />
-                          </button>
-                          <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-1.5 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
-                            <Printer size={14} />
-                          </button>
-                          <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-1.5 text-white/40 hover:text-gk-orange bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
-                            <Trash2 size={14} />
-                          </button>
+
+                          {/* Consolidated Actions Dropdown Menu */}
+                          <AnimatePresence>
+                            {activeActionDropdownId === receipt.id && (
+                              <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: -5 }} 
+                                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                                exit={{ opacity: 0, scale: 0.95, y: -5 }} 
+                                transition={{ duration: 0.12 }}
+                                className="absolute right-0 top-full mt-1.5 z-50 bg-[#16161f] border border-white/15 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.6)] py-1.5 min-w-[160px] overflow-hidden"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <button 
+                                  onClick={() => { setActiveActionDropdownId(null); handleEditReceipt(receipt); }} 
+                                  className="w-full px-3.5 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                >
+                                  <Edit2 size={14} className="text-blue-400" />
+                                  <span>Edit Receipt</span>
+                                </button>
+                                <button 
+                                  onClick={() => { setActiveActionDropdownId(null); handleDownloadJPG(receipt); }} 
+                                  className="w-full px-3.5 py-2 text-left text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                >
+                                  <ImageIcon size={14} className="text-emerald-400" />
+                                  <span>Download JPG</span>
+                                </button>
+                                <button 
+                                  onClick={() => { setActiveActionDropdownId(null); handleDownloadPDF(receipt); }} 
+                                  className="w-full px-3.5 py-2 text-left text-xs text-purple-300 hover:text-purple-200 hover:bg-purple-500/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                >
+                                  <Download size={14} className="text-purple-400" />
+                                  <span>Download PDF</span>
+                                </button>
+                                <div className="my-1 border-t border-white/10"></div>
+                                <button 
+                                  onClick={() => { setActiveActionDropdownId(null); handleDeleteReceipt(receipt.id); }} 
+                                  className="w-full px-3.5 py-2 text-left text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
+                                >
+                                  <Trash2 size={14} className="text-red-400" />
+                                  <span>Delete Record</span>
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       </div>
                     ))}
@@ -2942,15 +2990,6 @@ export default function Admin() {
                 >
                   {isExportingReceipt ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                   Download PDF
-                </button>
-                <button 
-                  disabled={isExportingReceipt}
-                  onClick={() => handlePrintReceipt(activeReceiptPreview)} 
-                  className="px-4 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer disabled:opacity-50"
-                  title="Print or Save PDF via browser dialog"
-                >
-                  <Printer size={16} />
-                  Print / Save PDF
                 </button>
               </div>
             </motion.div>
