@@ -107,7 +107,7 @@ const exportReceiptsToExcel = (receiptsList, groupBy = 'format', filterType = 'a
     'Format': r.formatType === 'prebooking' ? 'Prebooking / PO' : r.formatType === 'auction' ? 'Auction Win' : 'Standard Sale',
     'Items Summary': r.items?.map(it => `${it.qty}x ${it.description} (₹${it.amount})`).join(' | ') || '',
     'Item Count': r.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0,
-    'Subtotal (₹)': r.items?.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.amount) || 0)), 0) || 0,
+    'Subtotal (₹)': r.items?.reduce((acc, it) => acc + (Number(it.amount) || 0), 0) || 0,
     'Shipping (₹)': Number(r.shippingCharges || 0),
     'Total Amount Paid (₹)': Number(r.totalAmount || 0),
     'Pending Balance Due (₹)': Number(r.pendingBalance || 0),
@@ -3077,7 +3077,7 @@ export default function Admin() {
                             {/* Tax Row */}
                             <div className="flex justify-between items-center text-[10px] text-gray-600">
                               <span>Including Tax ({receiptForm.taxPercent}%)</span>
-                              <span className="font-mono font-semibold">₹{((receiptForm.items.reduce((acc, it) => acc + (Number(it.qty) * (Number(it.amount) || 0)), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (Number(receiptForm.taxPercent) / 100)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span className="font-mono font-semibold">₹{((receiptForm.items.reduce((acc, it) => acc + (Number(it.amount) || 0), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (Number(receiptForm.taxPercent) / 100)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                             
                              {/* Total Row */}
@@ -3085,7 +3085,7 @@ export default function Admin() {
                               <span>Total Paid</span>
                               <span className="font-mono font-black text-base">₹{
                                 (
-                                  (receiptForm.items.reduce((acc, it) => acc + (Number(it.qty) * (Number(it.amount) || 0)), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (1 + (Number(receiptForm.taxPercent) / 100))
+                                  (receiptForm.items.reduce((acc, it) => acc + (Number(it.amount) || 0), 0) + (receiptForm.includeShipping ? Number(receiptForm.shippingCharges) : 0)) * (1 + (Number(receiptForm.taxPercent) / 100))
                                 ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                               }</span>
                             </div>
