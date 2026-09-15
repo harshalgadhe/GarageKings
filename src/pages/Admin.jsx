@@ -766,21 +766,41 @@ export default function Admin() {
   }
 
   // Receipt helper functions
-  const suggestNextReceiptNumber = (records) => {
-    if (!records || records.length === 0) return 'RT00001';
-    let maxNum = 0;
-    records.forEach(r => {
-      const match = r.receiptNumber?.match(/RT(\d+)/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+  const suggestNextReceiptNumber = (records, type = 'standard') => {
+    if (type === 'prebooking') {
+      let maxNum = 0;
+      if (records && records.length > 0) {
+        records.forEach(r => {
+          const match = r.receiptNumber?.match(/(?:GKI-)?PB-?0*(\d+)/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          } else if (r.formatType === 'prebooking') {
+            const digits = r.receiptNumber?.match(/\d+/);
+            if (digits) {
+              const num = parseInt(digits[0], 10);
+              if (num > maxNum) maxNum = num;
+            }
+          }
+        });
       }
-    });
-    const nextNum = maxNum + 1;
-    return `RT${String(nextNum).padStart(5, '0')}`;
-  }
-
-
+      const nextNum = maxNum > 0 ? maxNum + 1 : 101;
+      return `GKI-PB-${String(nextNum).padStart(4, '0')}`;
+    } else {
+      let maxNum = 0;
+      if (records && records.length > 0) {
+        records.forEach(r => {
+          const match = r.receiptNumber?.match(/^RT0*(\d+)/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        });
+      }
+      const nextNum = maxNum > 0 ? maxNum + 1 : 207;
+      return `RT${String(nextNum).padStart(5, '0')}`;
+    }
+  };
 
   const handleFormatTypeChange = (type) => {
     let footerNote = '';
@@ -796,14 +816,19 @@ export default function Admin() {
       footerNote = '';
     }
     
+    const autoReceiptNum = !editingReceiptId 
+      ? suggestNextReceiptNumber(receipts, type) 
+      : receiptForm.receiptNumber;
+
     setReceiptForm(prev => ({
       ...prev,
       formatType: type,
+      receiptNumber: autoReceiptNum,
       includeShipping,
       footerNote,
       showExcludingShipping: type === 'prebooking' ? true : prev.showExcludingShipping
     }));
-  }
+  };
 
   const handleEditReceipt = (receipt) => {
     setEditingReceiptId(receipt.id);
@@ -2109,6 +2134,49 @@ export default function Admin() {
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-white">{editingReceiptId ? `Edit Receipt (${receiptForm.receiptNumber})` : 'Create New Receipt'}</h2>
                     <button onClick={() => { setIsAddingReceipt(false); setEditingReceiptId(null); }} className="text-white/50 hover:text-white cursor-pointer"><X size={20} /></button>
+                  </div>
+                  
+                  {/* TOP RECEIPT TYPE SELECTOR BAR */}
+                  <div className="bg-[#12121c] p-3.5 border border-white/10 rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 mb-6 shadow-inner">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black uppercase text-blue-400 tracking-wider">Receipt Type:</span>
+                      <span className="text-[11px] text-white/40">(auto-decides receipt number prefix)</span>
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleFormatTypeChange('standard')}
+                        className={`flex-1 md:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          receiptForm.formatType === 'standard' || !receiptForm.formatType
+                            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25 border border-blue-400 font-extrabold'
+                            : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        🛒 Standard Order (RT00XXX)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatTypeChange('prebooking')}
+                        className={`flex-1 md:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          receiptForm.formatType === 'prebooking'
+                            ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25 border border-orange-400 font-extrabold'
+                            : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        📦 PO / Prebooking (GKI-PB-XXXX)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFormatTypeChange('auction')}
+                        className={`flex-1 md:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          receiptForm.formatType === 'auction'
+                            ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25 border border-purple-400 font-extrabold'
+                            : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        🏆 Auction Win
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
