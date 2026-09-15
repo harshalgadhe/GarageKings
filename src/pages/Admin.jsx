@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Save, X, Image as ImageIcon, Settings, Eye, EyeOff, LogOut, TrendingUp, Clock, ShoppingBag, DollarSign, Calendar, ChevronLeft, ChevronRight, BarChart3, Layers, Download, FileSpreadsheet, Filter, Printer, FileText, Loader2 } from 'lucide-react'
 import { getCars, addCar, updateCar, deleteCar, updateCarOrder, uploadImageToStorage, isFirebaseConfigured, getGlobalSettings, updateGlobalSettings, getBids, getAuctions, addAuction, updateAuction, deleteAuction, getAuctionBids, getReceipts, addReceipt, updateReceipt, deleteReceipt, auth } from '../lib/db'
 import { Link } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 
 const parseReceiptDate = (receipt) => {
   if (!receipt) return new Date();
@@ -423,6 +425,7 @@ export default function Admin() {
     instructions: ''
   })
   const [activeReceiptPreview, setActiveReceiptPreview] = useState(null)
+  const [isExportingReceipt, setIsExportingReceipt] = useState(false)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [activeProductDropdownIndex, setActiveProductDropdownIndex] = useState(null)
 
@@ -895,13 +898,113 @@ export default function Admin() {
     }
   }
 
+  const getReceiptFilename = (receipt) => {
+    if (!receipt) return 'Receipt';
+    const name = receipt.customerName ? receipt.customerName.trim() : 'Customer';
+    const num = receipt.receiptNumber ? receipt.receiptNumber.trim() : 'Receipt';
+    return `${name} - ${num}`.replace(/[/\\?%*:|"<>]/g, '-');
+  };
+
   const handlePrintReceipt = (receipt) => {
-    setActiveReceiptPreview(receipt);
+    if (!receipt) return;
+    const originalTitle = document.title;
+    const filename = getReceiptFilename(receipt);
+    document.title = filename;
+
+    if (!activeReceiptPreview || activeReceiptPreview.id !== receipt.id) {
+      setActiveReceiptPreview(receipt);
+    }
+
     setTimeout(() => {
       window.print();
-      setActiveReceiptPreview(null);
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 1000);
     }, 250);
-  }
+  };
+
+  const handleDownloadImage = async (receiptToExport) => {
+    const receipt = receiptToExport || activeReceiptPreview;
+    if (!receipt) return;
+    
+    let element = document.getElementById('receipt-modal-card');
+    if (!element && !activeReceiptPreview) {
+      setActiveReceiptPreview(receipt);
+      await new Promise(r => setTimeout(r, 200));
+      element = document.getElementById('receipt-modal-card');
+    }
+    
+    if (!element) {
+      alert("Unable to generate image. Please open receipt details.");
+      return;
+    }
+    
+    try {
+      setIsExportingReceipt(true);
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = `${getReceiptFilename(receipt)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Image download error:', err);
+      alert('Failed to download image: ' + err.message);
+    } finally {
+      setIsExportingReceipt(false);
+    }
+  };
+
+  const handleDownloadPDF = async (receiptToExport) => {
+    const receipt = receiptToExport || activeReceiptPreview;
+    if (!receipt) return;
+    
+    let element = document.getElementById('receipt-modal-card');
+    if (!element && !activeReceiptPreview) {
+      setActiveReceiptPreview(receipt);
+      await new Promise(r => setTimeout(r, 200));
+      element = document.getElementById('receipt-modal-card');
+    }
+    
+    if (!element) {
+      alert("Unable to generate PDF. Please open receipt details.");
+      return;
+    }
+
+    try {
+      setIsExportingReceipt(true);
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${getReceiptFilename(receipt)}.pdf`);
+    } catch (err) {
+      console.error('PDF download error:', err);
+      alert('Failed to download PDF: ' + err.message);
+    } finally {
+      setIsExportingReceipt(false);
+    }
+  };
 
   if (isAuthLoading) {
     return (
@@ -2570,7 +2673,7 @@ export default function Admin() {
                 <>
                   <div className="divide-y divide-white/5">
                     {paginatedReceipts.map(receipt => (
-                      <div key={receipt.id} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/5 transition-colors group">
+                      <div key={receipt.id} onClick={() => setActiveReceiptPreview(receipt)} className="grid grid-cols-12 gap-3 p-4 items-center hover:bg-white/10 transition-colors group cursor-pointer">
                         <div className="col-span-2">
                           <div className="font-bold text-sm text-blue-400 font-mono">{receipt.receiptNumber}</div>
                           <div className="text-[9px] text-white/40 font-mono mt-0.5">{receipt.dateString?.split(' - ')[0]}</div>
@@ -2614,12 +2717,15 @@ export default function Admin() {
                           <div className="font-mono text-sm text-gk-yellow">₹{Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                           <div className="text-[9px] text-white/30 font-mono mt-0.5">Total paid</div>
                         </div>
-                        <div className="col-span-2 flex justify-end gap-1.5">
+                        <div className="col-span-2 flex justify-end gap-1.5" onClick={e => e.stopPropagation()}>
                           <button onClick={() => handleEditReceipt(receipt)} title="Edit receipt" className="p-2 text-white/60 hover:text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
                             <Edit2 size={15} />
                           </button>
+                          <button onClick={() => handleDownloadPDF(receipt)} title="Download PDF" className="p-2 text-purple-400 hover:text-white bg-purple-500/10 border border-purple-500/20 rounded-lg hover:bg-purple-500/20 transition-colors cursor-pointer">
+                            <Download size={15} />
+                          </button>
                           <button onClick={() => handlePrintReceipt(receipt)} title="Print / Save PDF" className="p-2 text-blue-400 hover:text-white bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 transition-colors cursor-pointer">
-                            <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                            <Printer size={15} />
                           </button>
                           <button onClick={() => handleDeleteReceipt(receipt.id)} title="Delete record" className="p-2 text-white/40 hover:text-gk-orange bg-white/5 border border-white/10 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer">
                             <Trash2 size={15} />
@@ -2675,7 +2781,7 @@ export default function Admin() {
               </div>
 
               {/* Receipt Body in screen view - 100% 1:1 WYSIWYG match with print layout */}
-              <div className="bg-white text-black p-8 rounded-xl shadow-inner font-sans relative overflow-hidden flex flex-col justify-between" style={{ color: '#000000', backgroundColor: '#ffffff', minHeight: '620px' }}>
+              <div id="receipt-modal-card" className="bg-white text-black p-8 rounded-xl shadow-inner font-sans relative overflow-hidden flex flex-col justify-between" style={{ color: '#000000', backgroundColor: '#ffffff', minHeight: '620px' }}>
                 {/* Faint Premium Brand Watermark */}
                 <div className="absolute pointer-events-none select-none z-0 text-center" style={{
                   top: '50%',
@@ -2792,10 +2898,38 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button onClick={() => setActiveReceiptPreview(null)} className="px-6 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold transition-colors text-sm cursor-pointer">Close</button>
-                <button onClick={() => { window.print(); setActiveReceiptPreview(null); }} className="px-6 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-650 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer">
-                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+              <div className="flex flex-wrap justify-end gap-2.5 pt-2">
+                <button 
+                  onClick={() => setActiveReceiptPreview(null)} 
+                  className="px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold transition-colors text-sm cursor-pointer"
+                >
+                  Close
+                </button>
+                <button 
+                  disabled={isExportingReceipt}
+                  onClick={() => handleDownloadImage(activeReceiptPreview)} 
+                  className="px-4 py-2.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 hover:bg-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-2 transition-colors text-sm cursor-pointer disabled:opacity-50"
+                  title="Download as PNG Image"
+                >
+                  {isExportingReceipt ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                  Download Image
+                </button>
+                <button 
+                  disabled={isExportingReceipt}
+                  onClick={() => handleDownloadPDF(activeReceiptPreview)} 
+                  className="px-4 py-2.5 rounded-lg bg-purple-500/20 border border-purple-500/30 hover:bg-purple-500/30 text-purple-300 font-semibold flex items-center gap-2 transition-colors text-sm cursor-pointer disabled:opacity-50"
+                  title="Download as PDF Document"
+                >
+                  {isExportingReceipt ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  Download PDF
+                </button>
+                <button 
+                  disabled={isExportingReceipt}
+                  onClick={() => handlePrintReceipt(activeReceiptPreview)} 
+                  className="px-4 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold flex items-center gap-2 transition-colors text-sm cursor-pointer disabled:opacity-50"
+                  title="Print or Save PDF via browser dialog"
+                >
+                  <Printer size={16} />
                   Print / Save PDF
                 </button>
               </div>
