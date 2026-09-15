@@ -2165,17 +2165,6 @@ export default function Admin() {
                       >
                         📦 PO / Prebooking (GKI-PB-XXXX)
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleFormatTypeChange('auction')}
-                        className={`flex-1 md:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                          receiptForm.formatType === 'auction'
-                            ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25 border border-purple-400 font-extrabold'
-                            : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
-                        }`}
-                      >
-                        🏆 Auction Win
-                      </button>
                     </div>
                   </div>
                   
@@ -2476,7 +2465,7 @@ export default function Admin() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-black/20 p-4 border border-white/5 rounded-xl">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-black/20 p-4 border border-white/5 rounded-xl">
                         {/* Shipping quick-toggle */}
                         <div className="flex flex-col justify-center">
                           <label className="flex items-center gap-2.5 cursor-pointer group">
@@ -2502,17 +2491,8 @@ export default function Admin() {
                           <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Tax Rate (%)</label>
                           <input type="number" min="0" value={receiptForm.taxPercent} onChange={e => setReceiptForm(prev => ({ ...prev, taxPercent: Math.max(0, parseInt(e.target.value) || 0) }))} className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none" />
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Receipt Format</label>
-                          <select value={receiptForm.formatType} onChange={e => handleFormatTypeChange(e.target.value)} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none cursor-pointer outline-none">
-                            <option value="standard" className="bg-[#111116] text-white">Standard Sale</option>
-                            <option value="prebooking" className="bg-[#111116] text-white">Prebooking / Pre-Order (PO)</option>
-                            <option value="auction" className="bg-[#111116] text-white">Auction Win</option>
-                            <option value="custom" className="bg-[#111116] text-white">Custom Format</option>
-                          </select>
-                        </div>
                         {receiptForm.formatType === 'prebooking' && (
-                          <div className="md:col-span-4 border-t border-white/5 pt-4 mt-2 space-y-3">
+                          <div className="md:col-span-3 border-t border-white/5 pt-4 mt-2 space-y-3">
                             <div>
                               <label className="block text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Pending Balance / Remaining Amount (₹)</label>
                               <input 
