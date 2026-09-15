@@ -1100,6 +1100,89 @@ export default function Admin() {
     }, 250);
   };
 
+  const sanitizeCssForHtml2Canvas = (str) => {
+    if (!str || typeof str !== 'string') return str;
+    if (!str.includes('oklch') && !str.includes('color-mix') && !str.includes('oklab') && !str.includes('lch')) {
+      return str;
+    }
+    return str
+      .replace(/oklch\([^;}]+\)/gi, '#000000')
+      .replace(/color-mix\([^;}]+\)/gi, '#000000')
+      .replace(/oklab\([^;}]+\)/gi, '#000000')
+      .replace(/lch\([^;}]+\)/gi, '#000000');
+  };
+
+  const getHtml2CanvasOptions = () => ({
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    ignoreElements: (el) => el.classList.contains('no-print') || el.hasAttribute('data-html2canvas-ignore'),
+    onclone: (clonedDoc) => {
+      // 1. Sanitize all <style> elements in cloned document
+      try {
+        Array.from(clonedDoc.querySelectorAll('style')).forEach(style => {
+          if (style.textContent && (style.textContent.includes('oklch') || style.textContent.includes('color-mix'))) {
+            style.textContent = sanitizeCssForHtml2Canvas(style.textContent);
+          }
+        });
+      } catch (e) {}
+
+      // 2. Sanitize stylesheet cssRules if accessible
+      try {
+        Array.from(clonedDoc.styleSheets || []).forEach(sheet => {
+          try {
+            const rules = sheet.cssRules || sheet.rules;
+            if (rules) {
+              Array.from(rules).forEach(rule => {
+                if (rule.cssText && (rule.cssText.includes('oklch') || rule.cssText.includes('color-mix'))) {
+                  if (rule.style && rule.style.cssText) {
+                    rule.style.cssText = sanitizeCssForHtml2Canvas(rule.style.cssText);
+                  }
+                }
+              });
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+
+      // 3. Convert or sanitize linked stylesheets
+      try {
+        Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]')).forEach(link => {
+          try {
+            if (link.sheet) {
+              let cssText = '';
+              const rules = link.sheet.cssRules || link.sheet.rules;
+              if (rules) {
+                for (let i = 0; i < rules.length; i++) {
+                  cssText += rules[i].cssText + '\n';
+                }
+                if (cssText.includes('oklch') || cssText.includes('color-mix')) {
+                  cssText = sanitizeCssForHtml2Canvas(cssText);
+                  const style = clonedDoc.createElement('style');
+                  style.textContent = cssText;
+                  if (link.parentNode) {
+                    link.parentNode.replaceChild(style, link);
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+
+      // 4. Sanitize element inline style attributes
+      try {
+        Array.from(clonedDoc.querySelectorAll('*')).forEach(el => {
+          const s = el.getAttribute('style');
+          if (s && (s.includes('oklch') || s.includes('color-mix'))) {
+            el.setAttribute('style', sanitizeCssForHtml2Canvas(s));
+          }
+        });
+      } catch (e) {}
+    }
+  });
+
   const handleDownloadJPG = async (receiptToExport) => {
     const receipt = receiptToExport || activeReceiptPreview;
     if (!receipt) return;
@@ -1122,13 +1205,7 @@ export default function Admin() {
     
     try {
       setIsExportingReceipt(true);
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        ignoreElements: (el) => el.classList.contains('no-print') || el.hasAttribute('data-html2canvas-ignore'),
-      });
+      const canvas = await html2canvas(element, getHtml2CanvasOptions());
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const link = document.createElement('a');
       link.href = imgData;
@@ -1171,13 +1248,7 @@ export default function Admin() {
 
     try {
       setIsExportingReceipt(true);
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        ignoreElements: (el) => el.classList.contains('no-print') || el.hasAttribute('data-html2canvas-ignore'),
-      });
+      const canvas = await html2canvas(element, getHtml2CanvasOptions());
       const imgData = canvas.toDataURL('image/png');
       
       const pdf = new jsPDF({
