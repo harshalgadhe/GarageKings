@@ -105,6 +105,7 @@ const exportReceiptsToExcel = (receiptsList, groupBy = 'format', filterType = 'a
     'Email': r.customerEmail || '',
     'Instagram': r.customerInsta || '',
     'Format': r.formatType === 'prebooking' ? 'Prebooking / PO' : r.formatType === 'auction' ? 'Auction Win' : 'Standard Sale',
+    'ETA': r.formatType === 'prebooking' ? (r.eta || '') : '',
     'Items Summary': r.items?.map(it => `${it.qty}x ${it.description} (₹${it.amount})`).join(' | ') || '',
     'Item Count': r.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0,
     'Subtotal (₹)': r.items?.reduce((acc, it) => acc + (Number(it.amount) || 0), 0) || 0,
@@ -415,7 +416,8 @@ export default function Admin() {
     customerInsta: '',
     customerAddress: '',
     formatType: 'standard', // 'standard', 'prebooking', 'auction', 'custom'
-    items: [{ qty: 1, description: '', amount: '' }],
+    eta: '',
+    items: [{ qty: 1, description: '', amount: '', unitPrice: '', pendingBalance: '', eta: '' }],
     shippingCharges: 150,
     includeShipping: true,
     taxPercent: 0,
@@ -437,8 +439,8 @@ export default function Admin() {
     if (toIndex < 0 || toIndex >= receiptForm.items.length) return;
     setReceiptForm(prev => {
       const newItems = [...prev.items];
-      const [moved] = newItems.splice(fromIndex, 1);
-      newItems.splice(toIndex, 0, moved);
+      const [movedItem] = newItems.splice(fromIndex, 1);
+      newItems.splice(toIndex, 0, movedItem);
       return { ...prev, items: newItems };
     });
   };
@@ -458,10 +460,14 @@ export default function Admin() {
       const uPrice = item.unitPrice !== undefined && item.unitPrice !== '' && item.unitPrice !== null ? parseFloat(item.unitPrice) : null;
       const paid = item.amount !== undefined && item.amount !== '' ? parseFloat(item.amount) : 0;
 
-      if (field === 'unitPrice' || field === 'amount' || field === 'qty') {
-        if (uPrice !== null && !isNaN(uPrice)) {
-          item.pendingBalance = String(Math.max(0, (uPrice * q) - paid));
+      if (prev.formatType === 'prebooking') {
+        if (field === 'unitPrice' || field === 'amount' || field === 'qty') {
+          if (uPrice !== null && !isNaN(uPrice)) {
+            item.pendingBalance = String(Math.max(0, (uPrice * q) - paid));
+          }
         }
+      } else {
+        item.pendingBalance = '';
       }
 
       newItems[index] = item;
@@ -469,25 +475,27 @@ export default function Admin() {
       // Calculate sum of item pendings
       let sumItemPendings = 0;
       let hasItemizedPending = false;
-      newItems.forEach(it => {
-        const itQ = Math.max(1, parseInt(it.qty) || 1);
-        const itUPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? parseFloat(it.unitPrice) : null;
-        const itPaid = it.amount !== undefined && it.amount !== '' ? parseFloat(it.amount) : 0;
-        
-        if (it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null) {
-          sumItemPendings += parseFloat(it.pendingBalance) || 0;
-          hasItemizedPending = true;
-        } else if (itUPrice !== null && !isNaN(itUPrice)) {
-          const p = Math.max(0, (itUPrice * itQ) - itPaid);
-          sumItemPendings += p;
-          hasItemizedPending = true;
-        }
-      });
+      if (prev.formatType === 'prebooking') {
+        newItems.forEach(it => {
+          const itQ = Math.max(1, parseInt(it.qty) || 1);
+          const itUPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? parseFloat(it.unitPrice) : null;
+          const itPaid = it.amount !== undefined && it.amount !== '' ? parseFloat(it.amount) : 0;
+          
+          if (it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null) {
+            sumItemPendings += parseFloat(it.pendingBalance) || 0;
+            hasItemizedPending = true;
+          } else if (itUPrice !== null && !isNaN(itUPrice)) {
+            const p = Math.max(0, (itUPrice * itQ) - itPaid);
+            sumItemPendings += p;
+            hasItemizedPending = true;
+          }
+        });
+      }
 
       return {
         ...prev,
         items: newItems,
-        pendingBalance: hasItemizedPending ? String(sumItemPendings) : prev.pendingBalance
+        pendingBalance: (prev.formatType === 'prebooking' && hasItemizedPending) ? String(sumItemPendings) : (prev.formatType === 'prebooking' ? prev.pendingBalance : '')
       };
     });
   };
@@ -505,6 +513,7 @@ export default function Admin() {
 
   const handleCopyReceiptSummary = (receipt) => {
     if (!receipt) return;
+    const isPO = (receipt.formatType === 'prebooking');
     let totalQty = 0;
     const itemsText = receipt.items?.map(it => {
       const q = Math.max(1, Number(it.qty) || 1);
@@ -516,9 +525,12 @@ export default function Admin() {
         : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
 
       let line = `• ${q}x ${it.description} (Paid: ₹${paid.toLocaleString('en-IN')})`;
-      if (unitP !== null || pend > 0) {
+      if (isPO && (unitP !== null || pend > 0 || it.eta)) {
         const pendPerUnit = q > 1 && pend > 0 ? ` [₹${(pend / q).toLocaleString('en-IN')}/unit pending]` : '';
-        line += `\n  └ Unit: ₹${(unitP || paid).toLocaleString('en-IN')} | Pending: ₹${pend.toLocaleString('en-IN')}${pendPerUnit}`;
+        const itemEtaStr = it.eta ? ` | ETA: ${it.eta}` : '';
+        line += `\n  └ Unit: ₹${(unitP || paid).toLocaleString('en-IN')} | Pending: ₹${pend.toLocaleString('en-IN')}${pendPerUnit}${itemEtaStr}`;
+      } else if (it.eta) {
+        line += ` (ETA: ${it.eta})`;
       }
       return line;
     }).join('\n') || '';
@@ -526,6 +538,7 @@ export default function Admin() {
     const textLines = [
       `🧾 RECEIPT - ${receipt.receiptNumber}`,
       `Date: ${receipt.dateString}`,
+      (isPO && receipt.eta) ? `ETA: ${receipt.eta}` : null,
       `Customer: ${receipt.customerName}`,
       receipt.customerPhone ? `Phone: ${receipt.customerPhone}` : null,
       receipt.customerEmail ? `Email: ${receipt.customerEmail}` : null,
@@ -533,7 +546,7 @@ export default function Admin() {
       receipt.customerAddress ? `Address:\n${receipt.customerAddress}` : null,
       itemsText ? `\nItems (${totalQty} units total):\n${itemsText}` : null,
       `Total Paid: ₹${Number(receipt.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-      receipt.pendingBalance > 0 ? `Balance Due: ₹${Number(receipt.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : null,
+      (isPO && receipt.pendingBalance > 0) ? `Balance Due: ₹${Number(receipt.pendingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : null,
       (receipt.instructions || receipt.instruction) ? `Instructions: ${receipt.instructions || receipt.instruction}` : null
     ].filter(Boolean).join('\n');
 
@@ -954,18 +967,20 @@ export default function Admin() {
       customerInsta: receipt.customerInsta || '',
       customerAddress: receipt.customerAddress || '',
       formatType: receipt.formatType || 'standard',
+      eta: receipt.eta || '',
       items: receipt.items && receipt.items.length > 0 ? receipt.items.map(it => ({ 
         qty: it.qty || 1, 
         description: it.description || '', 
         unitPrice: it.unitPrice !== undefined && it.unitPrice !== null ? String(it.unitPrice) : '',
         amount: String(it.amount || ''),
-        pendingBalance: it.pendingBalance !== undefined && it.pendingBalance !== null ? String(it.pendingBalance) : ''
-      })) : [{ qty: 1, description: '', unitPrice: '', amount: '', pendingBalance: '' }],
+        pendingBalance: (receipt.formatType === 'prebooking' && it.pendingBalance !== undefined && it.pendingBalance !== null) ? String(it.pendingBalance) : '',
+        eta: it.eta || ''
+      })) : [{ qty: 1, description: '', unitPrice: '', amount: '', pendingBalance: '', eta: '' }],
       shippingCharges: receipt.shippingCharges !== undefined ? receipt.shippingCharges : 150,
       includeShipping: receipt.includeShipping !== undefined ? receipt.includeShipping : true,
       taxPercent: receipt.taxPercent !== undefined ? receipt.taxPercent : 0,
       footerNote: receipt.footerNote !== undefined ? receipt.footerNote : '',
-      pendingBalance: receipt.pendingBalance !== undefined ? String(receipt.pendingBalance) : '',
+      pendingBalance: (receipt.formatType === 'prebooking' && receipt.pendingBalance !== undefined) ? String(receipt.pendingBalance) : '',
       showExcludingShipping: receipt.showExcludingShipping !== undefined ? receipt.showExcludingShipping : (receipt.formatType === 'prebooking'),
       instructions: receipt.instructions || receipt.instruction || ''
     });
@@ -973,7 +988,7 @@ export default function Admin() {
   }
 
   const handleSaveReceipt = async () => {
-    const { receiptNumber, customerName, customerPhone, items, formatType, footerNote, companyName, companyLocation, pendingBalance, instructions } = receiptForm;
+    const { receiptNumber, customerName, customerPhone, items, formatType, footerNote, companyName, companyLocation, pendingBalance, instructions, eta } = receiptForm;
     if (!receiptNumber.trim()) return alert("Receipt Number is required");
     if (!customerName.trim()) return alert("Customer Name is required");
     if (!companyName.trim()) return alert("Company Name is required");
@@ -994,33 +1009,47 @@ export default function Admin() {
       const finalDateString = formatReceiptDate(dateToUse);
       const computedReceiptDate = dateToUse.toISOString();
 
-      let calculatedPending = pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined ? Number(pendingBalance) : 0;
+      let calculatedPending = (formatType === 'prebooking' && pendingBalance !== '' && pendingBalance !== null && pendingBalance !== undefined) ? Number(pendingBalance) : 0;
       let sumItemPendings = 0;
       let hasItemizedPending = false;
 
       const formattedItems = items.map(it => {
         const q = Math.max(1, Number(it.qty) || 1);
         const paid = Number(it.amount) || 0;
-        const uPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? Number(it.unitPrice) : null;
-        let pend = it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null ? Number(it.pendingBalance) : null;
-        if (pend === null && uPrice !== null) {
-          pend = Math.max(0, (uPrice * q) - paid);
+        const itemEta = it.eta ? it.eta.trim() : '';
+
+        if (formatType === 'prebooking') {
+          const uPrice = it.unitPrice !== undefined && it.unitPrice !== '' && it.unitPrice !== null ? Number(it.unitPrice) : null;
+          let pend = it.pendingBalance !== undefined && it.pendingBalance !== '' && it.pendingBalance !== null ? Number(it.pendingBalance) : null;
+          if (pend === null && uPrice !== null) {
+            pend = Math.max(0, (uPrice * q) - paid);
+          }
+          if (pend !== null && pend > 0) {
+            sumItemPendings += pend;
+            hasItemizedPending = true;
+          }
+          return {
+            qty: q,
+            description: it.description.trim(),
+            unitPrice: uPrice,
+            amount: paid,
+            pendingBalance: pend,
+            ...(itemEta ? { eta: itemEta } : {})
+          };
+        } else {
+          return {
+            qty: q,
+            description: it.description.trim(),
+            amount: paid,
+            ...(itemEta ? { eta: itemEta } : {})
+          };
         }
-        if (pend !== null && pend > 0) {
-          sumItemPendings += pend;
-          hasItemizedPending = true;
-        }
-        return {
-          qty: q,
-          description: it.description.trim(),
-          unitPrice: uPrice,
-          amount: paid,
-          pendingBalance: pend
-        };
       });
 
-      if ((calculatedPending === 0 || !pendingBalance) && hasItemizedPending) {
+      if (formatType === 'prebooking' && (calculatedPending === 0 || !pendingBalance) && hasItemizedPending) {
         calculatedPending = sumItemPendings;
+      } else if (formatType !== 'prebooking') {
+        calculatedPending = 0;
       }
 
       const receiptData = {
@@ -1035,6 +1064,7 @@ export default function Admin() {
         customerInsta: receiptForm.customerInsta ? receiptForm.customerInsta.trim() : '',
         customerAddress: receiptForm.customerAddress.trim(),
         formatType,
+        eta: formatType === 'prebooking' ? (eta ? eta.trim() : '') : '',
         items: formattedItems,
         includeShipping: receiptForm.includeShipping,
         shippingCharges: shipping,
@@ -2433,6 +2463,33 @@ export default function Admin() {
                         </div>
                       </div>
 
+                      {/* ETA Field for PO / Prebooking Receipts */}
+                      {receiptForm.formatType === 'prebooking' && (
+                        <div className="bg-orange-500/10 border border-orange-500/30 p-3.5 rounded-xl">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-orange-400 uppercase tracking-wider">Overall Receipt ETA (Optional)</label>
+                            {receiptForm.eta && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(receiptForm.eta, 'edit-eta')}
+                                className="text-[11px] text-orange-300 hover:text-white flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                title="Copy ETA"
+                              >
+                                {copiedFieldId === 'edit-eta' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedFieldId === 'edit-eta' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            )}
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. 7-10 Days / 25 Sept 2026" 
+                            value={receiptForm.eta || ''} 
+                            onChange={e => setReceiptForm(prev => ({ ...prev, eta: e.target.value }))} 
+                            className="w-full bg-black/60 border border-orange-500/40 rounded-lg px-3.5 py-2.5 text-white focus:outline-none focus:border-orange-400 text-xs font-medium" 
+                          />
+                        </div>
+                      )}
+
                       <div className="bg-black/20 p-4 border border-white/5 rounded-xl space-y-4">
                         <h3 className="text-xs font-black uppercase text-blue-400 tracking-wider">Company Details</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2476,49 +2533,44 @@ export default function Admin() {
                             </div>
                             <input 
                               type="text" 
-                              placeholder="e.g. Rasesh Talati" 
+                              placeholder="Customer Name..." 
                               value={receiptForm.customerName} 
                               onFocus={() => setShowCustomerDropdown(true)}
                               onChange={e => {
                                 setReceiptForm(prev => ({ ...prev, customerName: e.target.value }));
                                 setShowCustomerDropdown(true);
-                              }} 
+                              }}
                               onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                               className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
                             />
 
-                            {/* CUSTOMER AUTOCOMPLETE DROPDOWN (Positioned strictly BELOW input box & scrollable) */}
+                            {/* FLOATING CUSTOMER AUTOCOMPLETE DROPDOWN */}
                             {showCustomerDropdown && customerMatches.length > 0 && (
                               <div 
                                 onMouseDown={(e) => e.preventDefault()}
                                 className="absolute top-full left-0 right-0 z-50 mt-1.5 bg-[#161622] border border-blue-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.9)] overflow-hidden max-h-56 overflow-y-auto divide-y divide-white/10"
                               >
-                                <div className="sticky top-0 bg-[#161622] px-3 py-1.5 border-b border-white/10 text-[10px] font-bold text-blue-300 uppercase tracking-wider flex justify-between items-center z-10">
-                                  <span>Click customer to auto-fill ({customerMatches.length})</span>
-                                  <button type="button" onClick={() => setShowCustomerDropdown(false)} className="text-white/40 hover:text-white"><X size={12} /></button>
-                                </div>
-                                {customerMatches.map((cust, idx) => (
+                                {customerMatches.map((cust, cIdx) => (
                                   <div 
-                                    key={idx}
+                                    key={cIdx}
                                     onMouseDown={(e) => {
                                       e.preventDefault();
                                       handleSelectCustomerSuggestion(cust);
                                     }}
                                     className="p-3 hover:bg-blue-500/20 cursor-pointer flex items-center justify-between transition-colors group"
                                   >
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-300 font-bold text-xs flex items-center justify-center border border-blue-500/30 shrink-0">
-                                        {cust.customerName ? cust.customerName[0].toUpperCase() : '👤'}
+                                    <div>
+                                      <div className="font-bold text-white text-xs group-hover:text-blue-300">
+                                        {cust.customerName}
                                       </div>
-                                      <div className="min-w-0">
-                                        <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors flex items-center gap-1.5">
-                                          <span className="truncate">{cust.customerName.length > 18 ? cust.customerName.slice(0, 16) + '...' : cust.customerName}</span>
-                                          <span className="text-white/40 font-normal">-</span>
-                                          <span className="font-mono text-blue-400 font-semibold shrink-0">{cust.customerPhone || 'No Phone'}</span>
-                                        </div>
+                                      <div className="text-[10px] text-white/50 flex gap-2">
+                                        {cust.customerPhone && <span>📱 {cust.customerPhone}</span>}
+                                        {cust.customerInsta && <span>📸 {cust.customerInsta}</span>}
                                       </div>
                                     </div>
-                                    <span className="text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 shrink-0">Auto-fill ↵</span>
+                                    <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 shrink-0">
+                                      Select
+                                    </span>
                                   </div>
                                 ))}
                               </div>
@@ -2526,9 +2578,9 @@ export default function Admin() {
                           </div>
 
                           {/* Customer Phone Field */}
-                          <div className="relative">
+                          <div>
                             <div className="flex items-center justify-between mb-2">
-                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Customer Phone</label>
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Phone Number *</label>
                               {receiptForm.customerPhone && (
                                 <button
                                   type="button"
@@ -2543,27 +2595,28 @@ export default function Admin() {
                             </div>
                             <input 
                               type="text" 
-                              placeholder="e.g. 9819169632" 
+                              placeholder="Phone Number..." 
                               value={receiptForm.customerPhone} 
                               onFocus={() => setShowCustomerDropdown(true)}
                               onChange={e => {
                                 setReceiptForm(prev => ({ ...prev, customerPhone: e.target.value }));
                                 setShowCustomerDropdown(true);
-                              }} 
+                              }}
                               onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                               className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" 
                             />
                           </div>
 
+                          {/* Email Field */}
                           <div>
                             <div className="flex items-center justify-between mb-2">
-                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Email ID (Optional)</label>
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Email Address</label>
                               {receiptForm.customerEmail && (
                                 <button
                                   type="button"
                                   onClick={() => handleCopyText(receiptForm.customerEmail, 'edit-customerEmail')}
                                   className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
-                                  title="Copy Email Address"
+                                  title="Copy Email"
                                 >
                                   {copiedFieldId === 'edit-customerEmail' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                                   <span>{copiedFieldId === 'edit-customerEmail' ? 'Copied' : 'Copy'}</span>
@@ -2572,9 +2625,11 @@ export default function Admin() {
                             </div>
                             <input type="email" placeholder="e.g. customer@example.com" value={receiptForm.customerEmail} onChange={e => setReceiptForm(prev => ({ ...prev, customerEmail: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
+
+                          {/* Insta Handle Field */}
                           <div>
                             <div className="flex items-center justify-between mb-2">
-                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Instagram Handle (Optional)</label>
+                              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Instagram Handle</label>
                               {receiptForm.customerInsta && (
                                 <button
                                   type="button"
@@ -2590,15 +2645,17 @@ export default function Admin() {
                             <input type="text" placeholder="e.g. @diecast_collector" value={receiptForm.customerInsta} onChange={e => setReceiptForm(prev => ({ ...prev, customerInsta: e.target.value }))} className="w-full bg-[#111116] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
                           </div>
                         </div>
+
+                        {/* Customer Address Field */}
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Customer Address (Optional)</label>
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider">Full Shipping Address</label>
                             {receiptForm.customerAddress && (
                               <button
                                 type="button"
                                 onClick={() => handleCopyText(receiptForm.customerAddress, 'edit-customerAddress')}
                                 className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
-                                title="Copy Customer Address"
+                                title="Copy Address"
                               >
                                 {copiedFieldId === 'edit-customerAddress' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                                 <span>{copiedFieldId === 'edit-customerAddress' ? 'Copied' : 'Copy'}</span>
@@ -2778,44 +2835,73 @@ export default function Admin() {
                               </div>
                             </div>
 
-                            {/* Unit Price Field (Full price per unit) */}
-                            <div className="w-24">
-                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Unit Price (₹)</label>
-                              <input 
-                                type="number" 
-                                placeholder="5000" 
-                                value={item.unitPrice || ''} 
-                                onChange={e => updateItemField(index, 'unitPrice', e.target.value)} 
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-white focus:outline-none focus:border-blue-500 text-xs" 
-                                title="Full price per unit before deposit"
-                              />
-                            </div>
+                            {receiptForm.formatType === 'prebooking' ? (
+                              <>
+                                {/* Unit Price Field (Full price per unit) */}
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Unit Price (₹)</label>
+                                  <input 
+                                    type="number" 
+                                    placeholder="5000" 
+                                    value={item.unitPrice || ''} 
+                                    onChange={e => updateItemField(index, 'unitPrice', e.target.value)} 
+                                    className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-white focus:outline-none focus:border-blue-500 text-xs" 
+                                    title="Full price per unit before deposit"
+                                  />
+                                </div>
 
-                            {/* Amount Paid Field */}
-                            <div className="w-24">
-                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Paid (₹)</label>
-                              <input 
-                                type="number" 
-                                placeholder="2000" 
-                                value={item.amount} 
-                                onChange={e => updateItemField(index, 'amount', e.target.value)} 
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-emerald-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
-                                title="Amount paid for this item"
-                              />
-                            </div>
+                                {/* Amount Paid Field */}
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Paid (₹)</label>
+                                  <input 
+                                    type="number" 
+                                    placeholder="2000" 
+                                    value={item.amount} 
+                                    onChange={e => updateItemField(index, 'amount', e.target.value)} 
+                                    className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-emerald-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
+                                    title="Amount paid for this item"
+                                  />
+                                </div>
 
-                            {/* Item Pending Field */}
-                            <div className="w-24">
-                              <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Pending (₹)</label>
-                              <input 
-                                type="number" 
-                                placeholder="0" 
-                                value={item.pendingBalance || ''} 
-                                onChange={e => updateItemField(index, 'pendingBalance', e.target.value)} 
-                                className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-red-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
-                                title="Item balance due before delivery"
-                              />
-                            </div>
+                                {/* Item Pending Field */}
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Pending (₹)</label>
+                                  <input 
+                                    type="number" 
+                                    placeholder="0" 
+                                    value={item.pendingBalance || ''} 
+                                    onChange={e => updateItemField(index, 'pendingBalance', e.target.value)} 
+                                    className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-red-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
+                                    title="Item balance due before delivery"
+                                  />
+                                </div>
+
+                                {/* Item ETA Field (Optional) */}
+                                <div className="w-24">
+                                  <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">ETA (Opt)</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Oct 2025" 
+                                    value={item.eta || ''} 
+                                    onChange={e => updateItemField(index, 'eta', e.target.value)} 
+                                    className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-white focus:outline-none focus:border-blue-500 text-xs" 
+                                    title="Item estimated arrival date (Optional)"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              /* Amount Field for Regular / Standard Receipts */
+                              <div className="w-28">
+                                <label className="block text-[10px] font-semibold text-white/40 uppercase mb-1">Amount (₹)</label>
+                                <input 
+                                  type="number" 
+                                  placeholder="Amount..." 
+                                  value={item.amount} 
+                                  onChange={e => updateItemField(index, 'amount', e.target.value)} 
+                                  className="w-full bg-black/55 border border-white/10 rounded-lg px-2 py-2 text-right text-emerald-400 font-semibold focus:outline-none focus:border-blue-500 text-xs" 
+                                />
+                              </div>
+                            )}
 
                             {/* Move Up/Down & Delete Actions */}
                             <div className="flex items-center gap-1 mt-5 shrink-0">
@@ -3008,7 +3094,7 @@ export default function Admin() {
                               <div className="text-right">
                                 <h2 className="text-xl font-black text-gray-800 tracking-tight leading-none mb-1">Receipt</h2>
                                 <p className="text-[9px] text-gray-600 font-semibold mt-1">Receipt # &nbsp;{receiptForm.receiptNumber || 'RTXXXXX'}</p>
-                                <p className="text-[8px] text-gray-500 font-medium mt-1">Date &nbsp;{receiptForm.dateString || 'Saturday, 30 May 2026 - 2:16 PM'}</p>
+                                <p className="text-[8px] text-gray-500 font-medium mt-1">Date &nbsp;{receiptForm.dateString || formatReceiptDate()}</p>
                               </div>
                             </div>
 
@@ -3034,7 +3120,7 @@ export default function Admin() {
                           {(() => {
                             let totalQty = 0;
                             let totalItemPending = 0;
-                            let hasItemizedDetails = (receiptForm.formatType === 'prebooking');
+                            const hasItemizedDetails = (receiptForm.formatType === 'prebooking');
 
                             (receiptForm.items || []).forEach(it => {
                               const q = Math.max(1, Number(it.qty) || 1);
@@ -3044,10 +3130,8 @@ export default function Admin() {
                               const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
                                 ? Number(it.pendingBalance) 
                                 : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
-                              totalItemPending += pend;
-
-                              if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
-                                hasItemizedDetails = true;
+                              if (hasItemizedDetails) {
+                                totalItemPending += pend;
                               }
                             });
 
@@ -3080,6 +3164,9 @@ export default function Admin() {
                                               <div className="truncate">{it.description || <span className="text-gray-300 italic">Description...</span>}</div>
                                               {pendPerUnit > 0 && (
                                                 <div className="text-[8.5px] text-red-600 font-semibold">(₹{pendPerUnit.toLocaleString('en-IN')} pending/unit)</div>
+                                              )}
+                                              {it.eta && (
+                                                <div className="text-[8.5px] text-orange-600 font-bold mt-0.5">ETA: {it.eta}</div>
                                               )}
                                             </div>
                                             <div className="col-span-2 text-right font-mono text-gray-600">
@@ -3174,6 +3261,14 @@ export default function Admin() {
                               </div>
                             )}
                           </div>
+
+                          {/* ETA */}
+                          {receiptForm.formatType === 'prebooking' && receiptForm.eta && (
+                            <div className="mt-3 pt-2 border-t border-dashed border-gray-300 text-left text-[10px]">
+                              <span className="font-bold text-black uppercase tracking-wider">ETA: </span>
+                              <span className="font-bold text-orange-600">{receiptForm.eta}</span>
+                            </div>
+                          )}
 
                           {/* Special Instructions */}
                           {receiptForm.instructions && (
@@ -3568,7 +3663,7 @@ export default function Admin() {
                     {(() => {
                       let totalQty = 0;
                       let totalItemPending = 0;
-                      let hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
+                      const hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
 
                       (activeReceiptPreview.items || []).forEach(it => {
                         const q = Math.max(1, Number(it.qty) || 1);
@@ -3578,10 +3673,8 @@ export default function Admin() {
                         const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
                           ? Number(it.pendingBalance) 
                           : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
-                        totalItemPending += pend;
-
-                        if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
-                          hasItemizedDetails = true;
+                        if (hasItemizedDetails) {
+                          totalItemPending += pend;
                         }
                       });
 
@@ -3615,6 +3708,11 @@ export default function Admin() {
                                         {pendPerUnit > 0 && (
                                           <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
                                             (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                          </div>
+                                        )}
+                                        {it.eta && (
+                                          <div className="text-[9.5px] text-orange-600 font-bold mt-0.5" style={{ fontSize: '9.5px', color: '#ea580c', fontWeight: 'bold' }}>
+                                            ETA: {it.eta}
                                           </div>
                                         )}
                                       </div>
@@ -3708,6 +3806,14 @@ export default function Admin() {
                         </div>
                       )}
                     </div>
+
+                    {/* ETA */}
+                    {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.eta && (
+                      <div className="mt-3 pt-2 text-left text-xs" style={{ borderTop: '1px dashed #d1d5db', marginTop: '12px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                        <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>ETA: </span>
+                        <span className="font-bold text-orange-600" style={{ fontWeight: 'bold', color: '#ea580c' }}>{activeReceiptPreview.eta}</span>
+                      </div>
+                    )}
 
                     {/* Special Instructions */}
                     {(activeReceiptPreview.instructions || activeReceiptPreview.instruction) && (
@@ -3819,7 +3925,7 @@ export default function Admin() {
             {(() => {
               let totalQty = 0;
               let totalItemPending = 0;
-              let hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
+              const hasItemizedDetails = (activeReceiptPreview.formatType === 'prebooking');
 
               (activeReceiptPreview.items || []).forEach(it => {
                 const q = Math.max(1, Number(it.qty) || 1);
@@ -3829,10 +3935,8 @@ export default function Admin() {
                 const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
                   ? Number(it.pendingBalance) 
                   : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
-                totalItemPending += pend;
-
-                if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
-                  hasItemizedDetails = true;
+                if (hasItemizedDetails) {
+                  totalItemPending += pend;
                 }
               });
 
@@ -3866,6 +3970,11 @@ export default function Admin() {
                                 {pendPerUnit > 0 && (
                                   <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
                                     (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                  </div>
+                                )}
+                                {it.eta && (
+                                  <div className="text-[9.5px] text-orange-600 font-bold mt-0.5" style={{ fontSize: '9.5px', color: '#ea580c', fontWeight: 'bold' }}>
+                                    ETA: {it.eta}
                                   </div>
                                 )}
                               </div>
@@ -3959,6 +4068,14 @@ export default function Admin() {
                 </div>
               )}
             </div>
+
+            {/* ETA */}
+            {activeReceiptPreview.formatType === 'prebooking' && activeReceiptPreview.eta && (
+              <div className="mt-3 pt-2 text-left text-xs" style={{ borderTop: '1px dashed #d1d5db', marginTop: '12px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>ETA: </span>
+                <span className="font-bold text-orange-600" style={{ fontWeight: 'bold', color: '#ea580c' }}>{activeReceiptPreview.eta}</span>
+              </div>
+            )}
 
             {/* Special Instructions */}
             {(activeReceiptPreview.instructions || activeReceiptPreview.instruction) && (
@@ -4167,7 +4284,7 @@ export default function Admin() {
                 {(() => {
                   let totalQty = 0;
                   let totalItemPending = 0;
-                  let hasItemizedDetails = (silentExportReceipt.formatType === 'prebooking');
+                  const hasItemizedDetails = (silentExportReceipt.formatType === 'prebooking');
 
                   (silentExportReceipt.items || []).forEach(it => {
                     const q = Math.max(1, Number(it.qty) || 1);
@@ -4177,10 +4294,8 @@ export default function Admin() {
                     const pend = it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '' 
                       ? Number(it.pendingBalance) 
                       : (unitP !== null ? Math.max(0, (unitP * q) - paid) : 0);
-                    totalItemPending += pend;
-
-                    if (unitP !== null || pend > 0 || (it.pendingBalance !== undefined && it.pendingBalance !== null && it.pendingBalance !== '')) {
-                      hasItemizedDetails = true;
+                    if (hasItemizedDetails) {
+                      totalItemPending += pend;
                     }
                   });
 
@@ -4214,6 +4329,11 @@ export default function Admin() {
                                     {pendPerUnit > 0 && (
                                       <div className="text-[9.5px] text-red-600 font-semibold mt-0.5" style={{ fontSize: '9.5px', color: '#dc2626', fontWeight: '600' }}>
                                         (₹{pendPerUnit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending / unit)
+                                      </div>
+                                    )}
+                                    {it.eta && (
+                                      <div className="text-[9.5px] text-orange-600 font-bold mt-0.5" style={{ fontSize: '9.5px', color: '#ea580c', fontWeight: 'bold' }}>
+                                        ETA: {it.eta}
                                       </div>
                                     )}
                                   </div>
@@ -4308,6 +4428,14 @@ export default function Admin() {
                   </div>
                 )}
               </div>
+
+              {/* ETA */}
+              {silentExportReceipt.formatType === 'prebooking' && silentExportReceipt.eta && (
+                <div className="mt-3 pt-2 text-left text-xs" style={{ borderTop: '1px dashed #d1d5db', marginTop: '12px', paddingTop: '8px', fontSize: '11.5px', color: '#374151' }}>
+                  <span className="font-bold text-black uppercase tracking-wider" style={{ fontWeight: 'bold', color: '#000000' }}>ETA: </span>
+                  <span className="font-bold text-orange-600" style={{ fontWeight: 'bold', color: '#ea580c' }}>{silentExportReceipt.eta}</span>
+                </div>
+              )}
 
               {/* Special Instructions */}
               {(silentExportReceipt.instructions || silentExportReceipt.instruction) && (
